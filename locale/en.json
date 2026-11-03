@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sensitive Command Guard",
+    "description": "A decision model judges sensitive shell commands before they run, closing the safety gap of full-access mode."
+  }
+}

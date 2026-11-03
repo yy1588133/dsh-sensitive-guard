@@ -1,0 +1,59 @@
+{
+  "name": "dsh-sensitive-guard",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Sensitive-command gate for DeepSeek Harness: rules plus a Jev decision model decide whether a risky shell command may run, closing the safety gap of full-access mode.",
+  "license": "MIT",
+  "author": "yy1588133",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yy1588133/dsh-sensitive-guard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yy1588133/dsh-sensitive-guard/issues"
+  },
+  "homepage": "https://github.com/yy1588133/dsh-sensitive-guard#readme",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/selftest.mjs && node test/tool-scope.mjs && node test/jev-protocol.mjs && node test/rules-parity.mjs"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "approval",
+    "sensitive-command",
+    "jev",
+    "typesafe",
+    "agent-safety"
+  ],
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.0-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-settings"]
+    }
+  }
+}

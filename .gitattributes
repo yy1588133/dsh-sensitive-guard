@@ -1,0 +1,17 @@
+# 统一用 LF：这个包会被 pnpm 从 git 直接展开到各平台，
+# 固定换行符可以避免同一份代码在 Windows / macOS 上产生不同的 blob。
+* text=auto eol=lf
+
+# 明确按文本处理
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.svg  text eol=lf
+
+# 二进制
+*.png  binary
+*.jpg  binary
+*.ico  binary

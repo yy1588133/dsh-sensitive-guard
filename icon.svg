@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Sensitive Command Guard">
+  <defs>
+    <linearGradient id="sg-shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4F8DF7"/>
+      <stop offset="1" stop-color="#2A5FD0"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 4 L54 12 V31 C54 45 44.5 55 32 60 C19.5 55 10 45 10 31 V12 Z" fill="url(#sg-shield)"/>
+  <path d="M32 4 L54 12 V31 C54 45 44.5 55 32 60 Z" fill="#000" opacity="0.12"/>
+  <path d="M23 20 L29 20 L32 34 L35 20 L41 20 L36 44 L28 44 Z" fill="#fff" opacity="0.95"/>
+  <circle cx="32" cy="50" r="3" fill="#FFD166"/>
+</svg>
