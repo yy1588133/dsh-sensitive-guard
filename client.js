@@ -94,6 +94,39 @@ window.__ModuleLoader__.load({
         verdictUnavailable: '不可用',
         verdictCheckFailed: '检查失败',
         verdictSandbox: '交给沙箱',
+        tabTools: '工具按需加载',
+        tabSelection: '技能与文件',
+        selectToolsEnabled: '按需加载工具',
+        selectToolsEnabledHelp:
+          '默认关闭。开启后每次对话先判定哪些工具与当前任务相关，其余暂时隐藏，省下工具清单占用的 token。隐藏的工具可以用 tool_search 找回来。',
+        selectWhitelist: '常驻白名单',
+        selectWhitelistHelp:
+          '逗号分隔的工具名，这些工具永远不隐藏。默认已内置一组保底工具（查找、读写、搜索等），在这里填的会追加。',
+        selectWhitelistPlaceholder: 'read, write, edit, bash',
+        selectMinProbability: '相关性阈值',
+        selectMinProbabilityHelp: '0-1 之间。判定概率高于该值的工具才保留，数值越高隐藏得越多。默认 0.5。',
+        selectStats: '本会话状态',
+        selectStatsNone: '当前没有隐藏的工具，工具清单是完整的。',
+        selectStatsHidden: '已隐藏 {n} 个工具',
+        selectStatsSaved: '估算少发 {tokens} tokens',
+        selectRestoreAll: '恢复全部工具',
+        selectRestoreConfirm: '把本会话隐藏的工具全部恢复？只撤销这次对话的隐藏，不动上面的设置。',
+        selectSkillsEnabled: '按任务挑选技能',
+        selectSkillsEnabledHelp:
+          '默认关闭。开启后先把技能目录按当前任务排序，只保留最相关的几个，省下其余技能的说明文字。',
+        selectSkillLimit: '最多保留技能数',
+        selectSkillLimitHelp: '1-200，默认 8。排在前面这么多名的技能保留，其余暂时隐藏。',
+        selectSkillMinProbability: '技能相关阈值',
+        selectSkillMinProbabilityHelp: '0-1 之间，默认 0.5。低于该概率的技能不入选。',
+        selectFilesEnabled: '文件结果排序',
+        selectFilesEnabledHelp:
+          '默认关闭。开启后 glob 返回的路径按与当前任务的相关性排序，相关的排前面。路径一条都不会丢。',
+        selectFileCandidates: '最多排序候选数',
+        selectFileCandidatesHelp: '1-200，默认 40。候选超过这个数就原样返回，不给一次排序多花一轮模型请求。',
+        selectUnavailable: '读不到按需加载设置：{msg}',
+        selectUnavailableHelp:
+          '这个页签要用后端的 /sensitive-guard/api/select 接口。接口没就绪时会一直显示这条提示，更新插件后重启 DSH 即可。',
+        selectReload: '重新读取',
       },
       en: {
         sectionTitle: 'Sensitive Command Guard',
@@ -181,6 +214,42 @@ window.__ModuleLoader__.load({
         verdictUnavailable: 'unavailable',
         verdictCheckFailed: 'check failed',
         verdictSandbox: 'sandbox decided',
+        tabTools: 'On-demand tools',
+        tabSelection: 'Skills & files',
+        selectToolsEnabled: 'Load tools on demand',
+        selectToolsEnabledHelp:
+          'Off by default. When on, each conversation first judges which tools fit the task and hides the rest for now, saving the tokens the tool list would cost. Hidden tools can be found again with tool_search.',
+        selectWhitelist: 'Always-on whitelist',
+        selectWhitelistHelp:
+          'Comma-separated tool names that are never hidden. A baseline set (lookup, read/write, search) is built in; entries here are added to it.',
+        selectWhitelistPlaceholder: 'read, write, edit, bash',
+        selectMinProbability: 'Relevance threshold',
+        selectMinProbabilityHelp:
+          'Between 0 and 1. Tools judged above it are kept; a higher value hides more. Defaults to 0.5.',
+        selectStats: 'This session',
+        selectStatsNone: 'Nothing is hidden; the tool list is complete.',
+        selectStatsHidden: '{n} tools hidden',
+        selectStatsSaved: 'about {tokens} tokens saved',
+        selectRestoreAll: 'Restore all tools',
+        selectRestoreConfirm:
+          'Restore every tool hidden in this session? Only hiding in this conversation is undone; the settings above stay.',
+        selectSkillsEnabled: 'Pick skills per task',
+        selectSkillsEnabledHelp:
+          'Off by default. When on, the skill catalog is ranked against the task and only the most relevant few are kept, saving the other descriptions.',
+        selectSkillLimit: 'Skills to keep',
+        selectSkillLimitHelp: '1-200, default 8. The top-ranked skills are kept and the rest are hidden for now.',
+        selectSkillMinProbability: 'Skill relevance threshold',
+        selectSkillMinProbabilityHelp: 'Between 0 and 1, default 0.5. Skills below it are not selected.',
+        selectFilesEnabled: 'Rank file results',
+        selectFilesEnabledHelp:
+          'Off by default. When on, paths returned by glob are ranked by relevance to the task, relevant ones first. No path is ever dropped.',
+        selectFileCandidates: 'Paths to rank',
+        selectFileCandidatesHelp:
+          '1-200, default 40. More candidates than this and the results come back unchanged, sparing a model round trip.',
+        selectUnavailable: 'Could not read the on-demand settings: {msg}',
+        selectUnavailableHelp:
+          'This tab needs the backend /sensitive-guard/api/select endpoint. While it is missing you keep seeing this note; restart DSH after updating the plugin.',
+        selectReload: 'Reload',
       },
     }
 
@@ -203,6 +272,44 @@ window.__ModuleLoader__.load({
         )
       }
     }
+
+    /* select-panel-helpers:start */
+    /** 逗号（含中文逗号）或换行分隔的文本 → 去空白、去重后的数组。 */
+    function splitList(raw) {
+      if (typeof raw !== 'string') return []
+      return [...new Set(raw.split(/[,，\n]/).map((item) => item.trim()).filter((item) => item !== ''))]
+    }
+
+    /** 概率文本 → 0-1 之间的数；非法值回落到 `fallback`。 */
+    function clamp01(raw, fallback) {
+      if (raw === '' || raw === null || raw === undefined) return fallback
+      const value = Number(raw)
+      if (!Number.isFinite(value)) return fallback
+      return Math.min(1, Math.max(0, value))
+    }
+
+    /** 整数文本 → 夹在 [min, max] 的整数；非法值回落到 `fallback`。 */
+    function intOr(raw, fallback, min, max) {
+      if (raw === '' || raw === null || raw === undefined) return fallback
+      const value = Math.trunc(Number(raw))
+      if (!Number.isSafeInteger(value)) return fallback
+      return Math.min(max, Math.max(min, value))
+    }
+
+    /** 后端 select 快照 → 面板草稿：白名单数组摊成逗号文本，数字摊成输入框字符串。 */
+    function selectDraftFrom(data) {
+      return {
+        toolsEnabled: data?.tools?.enabled === true,
+        whitelistText: Array.isArray(data?.tools?.whitelist) ? data.tools.whitelist.join(', ') : '',
+        toolMinProbability: String(data?.tools?.minProbability ?? 0.5),
+        skillsEnabled: data?.selection?.skillsEnabled === true,
+        skillLimit: String(data?.selection?.skillLimit ?? 8),
+        skillMinProbability: String(data?.selection?.skillMinProbability ?? 0.5),
+        filesEnabled: data?.selection?.filesEnabled === true,
+        fileCandidates: String(data?.selection?.fileCandidates ?? 40),
+      }
+    }
+    /* select-panel-helpers:end */
 
     /** 统一的小请求封装：返回 JSON，非 2xx 抛错。 */
     async function api(path, init) {
@@ -552,6 +659,11 @@ window.__ModuleLoader__.load({
       const [status, setStatus] = React.useState('')
       const [busy, setBusy] = React.useState(false)
       const [testing, setTesting] = React.useState(false)
+      const [selectState, setSelectState] = React.useState(null)
+      const [selectDraft, setSelectDraft] = React.useState(null)
+      const [selectError, setSelectError] = React.useState('')
+      const [selectBusy, setSelectBusy] = React.useState(false)
+      const [selectStatus, setSelectStatus] = React.useState('')
 
       /** 首次加载：配置、规则、判定记录。 */
       const load = React.useCallback(async () => {
@@ -573,6 +685,27 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         void load()
       }, [load])
+
+      /**
+       * 读取按需加载设置。
+       *
+       * 接口是后加的：旧版本插件上它还是 404，这里只记下错误，
+       * 不让整个设置面板退化成「读取配置失败」。
+       */
+      const loadSelect = React.useCallback(async () => {
+        try {
+          const result = await api('select')
+          setSelectState(result)
+          setSelectDraft(selectDraftFrom(result))
+          setSelectError('')
+        } catch (selectLoadError) {
+          setSelectError(selectLoadError instanceof Error ? selectLoadError.message : String(selectLoadError))
+        }
+      }, [])
+
+      React.useEffect(() => {
+        void loadSelect()
+      }, [loadSelect])
 
       /** 本地改一个字段，延迟到「保存」才落盘。 */
       const patch = (values) => setConfig((current) => ({ ...(current ?? {}), ...values }))
@@ -659,6 +792,58 @@ window.__ModuleLoader__.load({
         } catch (clearError) {
           setStatus(`${t('saveFailed')}: ${clearError instanceof Error ? clearError.message : String(clearError)}`)
         }
+      }
+
+      /** 改动按需加载草稿里的字段，等「保存」才落盘。 */
+      const patchSelect = (values) => setSelectDraft((current) => ({ ...(current ?? {}), ...values }))
+
+      /**
+       * 提交 select 的一部分；只发本页签拥有的那一半，另一半留在后端。
+       *
+       * 落盘后重新读一次：状态区（隐藏数量、省下的 token）只认服务端的说法。
+       */
+      const saveSelect = async (payload) => {
+        setSelectBusy(true)
+        setSelectStatus('')
+        try {
+          await api('select', { method: 'POST', body: JSON.stringify(payload) })
+          await loadSelect()
+          setSelectStatus(t('saved'))
+        } catch (selectSaveError) {
+          setSelectStatus(
+            `${t('saveFailed')}: ${selectSaveError instanceof Error ? selectSaveError.message : String(selectSaveError)}`,
+          )
+        } finally {
+          setSelectBusy(false)
+        }
+      }
+
+      /** 保存工具按需加载这一半。 */
+      const saveTools = () =>
+        saveSelect({
+          tools: {
+            enabled: selectDraft.toolsEnabled,
+            whitelist: splitList(selectDraft.whitelistText),
+            minProbability: clamp01(selectDraft.toolMinProbability, 0.5),
+          },
+        })
+
+      /** 保存技能与文件这一半。 */
+      const saveSelection = () =>
+        saveSelect({
+          selection: {
+            skillsEnabled: selectDraft.skillsEnabled,
+            skillLimit: intOr(selectDraft.skillLimit, 8, 1, 200),
+            skillMinProbability: clamp01(selectDraft.skillMinProbability, 0.5),
+            filesEnabled: selectDraft.filesEnabled,
+            fileCandidates: intOr(selectDraft.fileCandidates, 40, 1, 200),
+          },
+        })
+
+      /** 恢复本会话隐藏的全部工具。 */
+      const restoreAll = async () => {
+        if (!window.confirm(t('selectRestoreConfirm'))) return
+        await saveSelect({ action: 'restore-all' })
       }
 
       if (error !== '') {
@@ -1063,6 +1248,209 @@ window.__ModuleLoader__.load({
             ),
       )
 
+      const hidden = Array.isArray(selectState?.stats?.hidden) ? selectState.stats.hidden : []
+      const savedTokens = Number(selectState?.stats?.savedTokens ?? 0) || 0
+
+      /** select 接口没就绪时的提示盒：说明原因，给一个重读按钮。 */
+      const selectUnavailablePanel = h(
+        'div',
+        { style: { display: 'grid', gap: 10, paddingTop: 10, minWidth: 0 } },
+        h(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              gap: 8,
+              alignItems: 'flex-start',
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--dsw-alias-state-warn-primary)',
+              background: 'var(--dsw-alias-bg-layer-2)',
+              fontSize: 12.5,
+              lineHeight: 1.65,
+              color: 'var(--dsw-alias-label-secondary)',
+              minWidth: 0,
+            },
+          },
+          h(
+            'span',
+            { style: { minWidth: 0, overflowWrap: 'anywhere' } },
+            t('selectUnavailable', { msg: selectError }),
+          ),
+          h(Help, { text: t('selectUnavailableHelp') }),
+        ),
+        h('div', null, h(Button, { onClick: () => void loadSelect() }, t('selectReload'))),
+      )
+
+      /** 首次读取还没回来时的占位。 */
+      const selectLoadingPanel = h(
+        'div',
+        { style: { paddingTop: 10, fontSize: 13, color: 'var(--dsw-alias-label-secondary)' } },
+        t('loading'),
+      )
+
+      /** 两个新页签共用的保存行：保存按钮 + 可选附加按钮 + 状态文字。 */
+      const selectSaveRow = (onSave, extra) =>
+        h(
+          'div',
+          { style: { display: 'flex', gap: 8, alignItems: 'center', paddingTop: 4, flexWrap: 'wrap' } },
+          h(
+            Button,
+            { primary: true, disabled: selectBusy, onClick: () => void onSave() },
+            selectBusy ? t('saving') : t('save'),
+          ),
+          extra ?? null,
+          selectStatus === ''
+            ? null
+            : h(
+                'span',
+                { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)', minWidth: 0 } },
+                selectStatus,
+              ),
+        )
+
+      const toolsPanel =
+        selectDraft === null
+          ? selectError === ''
+            ? selectLoadingPanel
+            : selectUnavailablePanel
+          : h(
+              'div',
+              { style: { display: 'grid', gap: 6, paddingTop: 10, minWidth: 0 } },
+              h(Row, {
+                title: t('selectToolsEnabled'),
+                help: t('selectToolsEnabledHelp'),
+                children: h(Toggle, {
+                  checked: selectDraft.toolsEnabled,
+                  disabled: selectBusy,
+                  onChange: (value) => patchSelect({ toolsEnabled: value }),
+                }),
+              }),
+              h(Row, {
+                title: t('selectWhitelist'),
+                help: t('selectWhitelistHelp'),
+                children: h(TextInput, {
+                  value: selectDraft.whitelistText,
+                  width: 320,
+                  placeholder: t('selectWhitelistPlaceholder'),
+                  disabled: selectBusy,
+                  onChange: (value) => patchSelect({ whitelistText: value }),
+                }),
+              }),
+              h(Row, {
+                title: t('selectMinProbability'),
+                help: t('selectMinProbabilityHelp'),
+                children: h(TextInput, {
+                  value: selectDraft.toolMinProbability,
+                  type: 'number',
+                  width: 90,
+                  disabled: selectBusy,
+                  onChange: (value) => patchSelect({ toolMinProbability: value }),
+                }),
+              }),
+              h(
+                'div',
+                {
+                  style: {
+                    display: 'grid',
+                    gap: 4,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--dsw-alias-border-l1)',
+                    background: 'var(--dsw-alias-bg-layer-2)',
+                    fontSize: 12,
+                    lineHeight: 1.7,
+                    color: 'var(--dsw-alias-label-secondary)',
+                    minWidth: 0,
+                  },
+                },
+                h(
+                  'div',
+                  { style: { fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } },
+                  t('selectStats'),
+                ),
+                h(
+                  'div',
+                  { title: hidden.join(', '), style: { minWidth: 0, overflowWrap: 'anywhere' } },
+                  hidden.length === 0
+                    ? t('selectStatsNone')
+                    : `${t('selectStatsHidden', { n: hidden.length })} · ${t('selectStatsSaved', {
+                        tokens: savedTokens,
+                      })}`,
+                ),
+              ),
+              selectSaveRow(
+                saveTools,
+                h(
+                  Button,
+                  { tone: 'danger', disabled: selectBusy || hidden.length === 0, onClick: () => void restoreAll() },
+                  t('selectRestoreAll'),
+                ),
+              ),
+            )
+
+      const selectionPanel =
+        selectDraft === null
+          ? selectError === ''
+            ? selectLoadingPanel
+            : selectUnavailablePanel
+          : h(
+              'div',
+              { style: { display: 'grid', gap: 6, paddingTop: 10, minWidth: 0 } },
+              h(Row, {
+                title: t('selectSkillsEnabled'),
+                help: t('selectSkillsEnabledHelp'),
+                children: h(Toggle, {
+                  checked: selectDraft.skillsEnabled,
+                  disabled: selectBusy,
+                  onChange: (value) => patchSelect({ skillsEnabled: value }),
+                }),
+              }),
+              h(Row, {
+                title: t('selectSkillLimit'),
+                help: t('selectSkillLimitHelp'),
+                children: h(TextInput, {
+                  value: selectDraft.skillLimit,
+                  type: 'number',
+                  width: 90,
+                  disabled: selectBusy || !selectDraft.skillsEnabled,
+                  onChange: (value) => patchSelect({ skillLimit: value }),
+                }),
+              }),
+              h(Row, {
+                title: t('selectSkillMinProbability'),
+                help: t('selectSkillMinProbabilityHelp'),
+                children: h(TextInput, {
+                  value: selectDraft.skillMinProbability,
+                  type: 'number',
+                  width: 90,
+                  disabled: selectBusy || !selectDraft.skillsEnabled,
+                  onChange: (value) => patchSelect({ skillMinProbability: value }),
+                }),
+              }),
+              h(Row, {
+                title: t('selectFilesEnabled'),
+                help: t('selectFilesEnabledHelp'),
+                children: h(Toggle, {
+                  checked: selectDraft.filesEnabled,
+                  disabled: selectBusy,
+                  onChange: (value) => patchSelect({ filesEnabled: value }),
+                }),
+              }),
+              h(Row, {
+                title: t('selectFileCandidates'),
+                help: t('selectFileCandidatesHelp'),
+                children: h(TextInput, {
+                  value: selectDraft.fileCandidates,
+                  type: 'number',
+                  width: 90,
+                  disabled: selectBusy || !selectDraft.filesEnabled,
+                  onChange: (value) => patchSelect({ fileCandidates: value }),
+                }),
+              }),
+              selectSaveRow(saveSelection),
+            )
+
       return h(
         'section',
         { style: { display: 'grid', gap: 8, padding: '14px 0', minWidth: 0, width: '100%', boxSizing: 'border-box' } },
@@ -1080,11 +1468,29 @@ window.__ModuleLoader__.load({
             t('sectionDesc'),
           ),
         ),
-        h('div', { style: { borderBottom: '1px solid var(--dsw-alias-border-l1)' } }, [
-          tabButton('rules', t('tabRules')),
-          tabButton('assist', t('tabAssist')),
-        ]),
-        tab === 'rules' ? rulesPanel : assistPanel,
+        h(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              flexWrap: 'wrap',
+              borderBottom: '1px solid var(--dsw-alias-border-l1)',
+            },
+          },
+          [
+            tabButton('rules', t('tabRules')),
+            tabButton('assist', t('tabAssist')),
+            tabButton('tools', t('tabTools')),
+            tabButton('skills', t('tabSelection')),
+          ],
+        ),
+        tab === 'rules'
+          ? rulesPanel
+          : tab === 'tools'
+            ? toolsPanel
+            : tab === 'skills'
+              ? selectionPanel
+              : assistPanel,
         h(
           'div',
           { style: { display: 'grid', gap: 4, marginTop: 8, minWidth: 0 } },

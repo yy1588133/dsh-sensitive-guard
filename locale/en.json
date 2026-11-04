@@ -2,5 +2,35 @@
   "meta": {
     "title": "Sensitive Command Guard",
     "description": "A decision model judges sensitive shell commands before they run, closing the safety gap of full-access mode."
+  },
+  "select": {
+    "tabTools": "On-demand tools",
+    "tabSelection": "Skills & files",
+    "selectToolsEnabled": "Load tools on demand",
+    "selectToolsEnabledHelp": "Off by default. When on, each conversation first judges which tools fit the task and hides the rest for now, saving the tokens the tool list would cost. Hidden tools can be found again with tool_search.",
+    "selectWhitelist": "Always-on whitelist",
+    "selectWhitelistHelp": "Comma-separated tool names that are never hidden. A baseline set (lookup, read/write, search) is built in; entries here are added to it.",
+    "selectWhitelistPlaceholder": "read, write, edit, bash",
+    "selectMinProbability": "Relevance threshold",
+    "selectMinProbabilityHelp": "Between 0 and 1. Tools judged above it are kept; a higher value hides more. Defaults to 0.5.",
+    "selectStats": "This session",
+    "selectStatsNone": "Nothing is hidden; the tool list is complete.",
+    "selectStatsHidden": "{n} tools hidden",
+    "selectStatsSaved": "about {tokens} tokens saved",
+    "selectRestoreAll": "Restore all tools",
+    "selectRestoreConfirm": "Restore every tool hidden in this session? Only hiding in this conversation is undone; the settings above stay.",
+    "selectSkillsEnabled": "Pick skills per task",
+    "selectSkillsEnabledHelp": "Off by default. When on, the skill catalog is ranked against the task and only the most relevant few are kept, saving the other descriptions.",
+    "selectSkillLimit": "Skills to keep",
+    "selectSkillLimitHelp": "1-200, default 8. The top-ranked skills are kept and the rest are hidden for now.",
+    "selectSkillMinProbability": "Skill relevance threshold",
+    "selectSkillMinProbabilityHelp": "Between 0 and 1, default 0.5. Skills below it are not selected.",
+    "selectFilesEnabled": "Rank file results",
+    "selectFilesEnabledHelp": "Off by default. When on, paths returned by glob are ranked by relevance to the task, relevant ones first. No path is ever dropped.",
+    "selectFileCandidates": "Paths to rank",
+    "selectFileCandidatesHelp": "1-200, default 40. More candidates than this and the results come back unchanged, sparing a model round trip.",
+    "selectUnavailable": "Could not read the on-demand settings: {msg}",
+    "selectUnavailableHelp": "This tab needs the backend /sensitive-guard/api/select endpoint. While it is missing you keep seeing this note; restart DSH after updating the plugin.",
+    "selectReload": "Reload"
   }
 }

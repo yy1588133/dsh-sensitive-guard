@@ -2,5 +2,35 @@
   "meta": {
     "title": "敏感命令守门",
     "description": "执行敏感命令前先让决策模型判定，用来补上「完全权限」模式的安全缺口。"
+  },
+  "select": {
+    "tabTools": "工具按需加载",
+    "tabSelection": "技能与文件",
+    "selectToolsEnabled": "按需加载工具",
+    "selectToolsEnabledHelp": "默认关闭。开启后每次对话先判定哪些工具与当前任务相关，其余暂时隐藏，省下工具清单占用的 token。隐藏的工具可以用 tool_search 找回来。",
+    "selectWhitelist": "常驻白名单",
+    "selectWhitelistHelp": "逗号分隔的工具名，这些工具永远不隐藏。默认已内置一组保底工具（查找、读写、搜索等），在这里填的会追加。",
+    "selectWhitelistPlaceholder": "read, write, edit, bash",
+    "selectMinProbability": "相关性阈值",
+    "selectMinProbabilityHelp": "0-1 之间。判定概率高于该值的工具才保留，数值越高隐藏得越多。默认 0.5。",
+    "selectStats": "本会话状态",
+    "selectStatsNone": "当前没有隐藏的工具，工具清单是完整的。",
+    "selectStatsHidden": "已隐藏 {n} 个工具",
+    "selectStatsSaved": "估算少发 {tokens} tokens",
+    "selectRestoreAll": "恢复全部工具",
+    "selectRestoreConfirm": "把本会话隐藏的工具全部恢复？只撤销这次对话的隐藏，不动上面的设置。",
+    "selectSkillsEnabled": "按任务挑选技能",
+    "selectSkillsEnabledHelp": "默认关闭。开启后先把技能目录按当前任务排序，只保留最相关的几个，省下其余技能的说明文字。",
+    "selectSkillLimit": "最多保留技能数",
+    "selectSkillLimitHelp": "1-200，默认 8。排在前面这么多名的技能保留，其余暂时隐藏。",
+    "selectSkillMinProbability": "技能相关阈值",
+    "selectSkillMinProbabilityHelp": "0-1 之间，默认 0.5。低于该概率的技能不入选。",
+    "selectFilesEnabled": "文件结果排序",
+    "selectFilesEnabledHelp": "默认关闭。开启后 glob 返回的路径按与当前任务的相关性排序，相关的排前面。路径一条都不会丢。",
+    "selectFileCandidates": "最多排序候选数",
+    "selectFileCandidatesHelp": "1-200，默认 40。候选超过这个数就原样返回，不给一次排序多花一轮模型请求。",
+    "selectUnavailable": "读不到按需加载设置：{msg}",
+    "selectUnavailableHelp": "这个页签要用后端的 /sensitive-guard/api/select 接口。接口没就绪时会一直显示这条提示，更新插件后重启 DSH 即可。",
+    "selectReload": "重新读取"
   }
 }

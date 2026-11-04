@@ -1,5 +1,5 @@
 /**
- * dsh-sensitive-guard：命令执行前的决策模型守门。
+ * dsh-decision-guard：命令执行前的决策模型守门。
  *
  * 解决的问题：`danger-full-access` 预设把沙箱和审批一起关掉（sandbox 不限制 +
  * approval 策略 `never`），于是任何一条 `rm -rf` 都会直接执行。这个插件在
@@ -18,14 +18,17 @@
  * - **拒绝可以，放行不行**。本插件只会让流程更严，不会让任何一条本该被拒绝的调用
  *   溜过去：它永远不返回「强制 allow」，最多是 `next()`。
  *
- * @module dsh-sensitive-guard
+ * @module dsh-decision-guard
  */
 
 import { matchRules, CHECK_FAILED_RULE_ID } from './lib/rules.js'
 import { DecisionClient } from './lib/jev.js'
+import { createSkillSelector } from './lib/skill-select.js'
+import { createFileRanker } from './lib/file-rank.js'
+import { createToolSelector } from './lib/tool-select.js'
 import { COMMAND_FIELD_NAMES, RulesStore, SettingsStore, dshHome } from './lib/store.js'
 
-export const name = 'dsh-sensitive-guard'
+export const name = 'dsh-decision-guard'
 
 /** 硬依赖只有工具注册表；webServer 是可选依赖，没有 Web 面板时守卫照常工作。 */
 export const inject = ['tools']
@@ -247,6 +250,19 @@ export function apply(ctx) {
   }
   const client = new DecisionClient({ getSettings: () => settingsStore.get(), logger })
 
+  /**
+   * 三个新功能共用同一个连接与冷却：判断失败只影响那一次功能，不影响命令守门。
+   * 各模块内部都把「失败」翻译成「退回原生行为」，不向外抛。
+   */
+  const skillSelector = createSkillSelector({
+    ctx,
+    client,
+    getSettings: () => settingsStore.get(),
+    logger,
+  })
+  // 排序模块自己在 tools/execute 与 tools/post-execute 上挂链，这里只创建一次。
+  createFileRanker({ ctx, client, getSettings: () => settingsStore.get(), logger })
+
   /** @type {Array<object>} */
   const log = []
   /** @param {object} entry 一条判定记录 */
@@ -254,6 +270,13 @@ export function apply(ctx) {
     log.unshift({ at: new Date().toISOString(), ...entry })
     if (log.length > LOG_CAPACITY) log.length = LOG_CAPACITY
   }
+  const toolSelector = createToolSelector({
+    ctx,
+    client,
+    getSettings: () => settingsStore.get(),
+    logger,
+    record,
+  })
 
   /**
    * 解析这次调用的有效审批策略：`never` 意味着弹不出确认框，只能允许或拒绝。
@@ -310,6 +333,86 @@ export function apply(ctx) {
     }
   }
 
+  // ── 工具与技能：每个会话首条用户消息评估一次 ───────────────────────────────
+  ctx.effect(() => {
+    const off = ctx.on('agent/pre-step', async ({ agent, messages, signal }, next) => {
+      let decision = await next()
+      // 顺序固定：先裁技能目录，再摘工具；两边失败都各自退回原样。
+      decision = await skillSelector.onPreStep(decision, agent, messages, signal)
+      decision = await toolSelector.onPreStep(decision, agent, messages, signal)
+      return decision
+    })
+    return off
+  }, 'dsh-decision-guard: agent/pre-step')
+
+  // ── 两个常驻工具：tool_search 召回工具，skill_catalog 列出全部技能 ───────────
+  ctx.effect(
+    () =>
+      ctx.tools.register({
+        name: 'tool_search',
+        description:
+          'List tools that were hidden for this session and bring them back. Call with no arguments to see what is hidden; pass enable:[names] to restore specific tools, or all:true to restore every hidden tool.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Filter hidden tools by name or description.' },
+            enable: { type: 'array', items: { type: 'string' }, description: 'Exact tool names to restore.' },
+            all: { type: 'boolean', description: 'Restore every hidden tool.' },
+          },
+        },
+        output: {
+          schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+          render: (_args, value) => [{ type: 'text', text: String(value?.text ?? '') }],
+        },
+        async execute(args, exec) {
+          const result = await toolSelector.search(exec.agent, args ?? {}, exec.signal)
+          return { text: typeof result?.text === 'string' ? result.text : '工具检索没有返回内容。' }
+        },
+      }),
+    'dsh-decision-guard: tool_search',
+  )
+
+  ctx.effect(
+    () =>
+      ctx.tools.register({
+        name: 'skill_catalog',
+        description:
+          'List every skill available in this session with its summary. Load one with the skill tool using its exact name.',
+        parameters: { type: 'object', properties: {} },
+        output: {
+          schema: {
+            type: 'object',
+            properties: {
+              skills: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: { name: { type: 'string' }, description: { type: 'string' } },
+                  required: ['name', 'description'],
+                },
+              },
+            },
+            required: ['skills'],
+          },
+          render: (_args, value) => [
+            {
+              type: 'text',
+              text:
+                (Array.isArray(value?.skills) ? value.skills : [])
+                  .map((skill) => `- ${skill.name}: ${skill.description}`)
+                  .join('\n') || '当前没有可加载的技能。',
+            },
+          ],
+        },
+        async execute(_args, exec) {
+          return { skills: await skillSelector.listSkills(exec.agent, exec.signal) }
+        },
+      }),
+    'dsh-decision-guard: skill_catalog',
+  )
+
+  ctx.effect(() => () => toolSelector.dispose(), 'dsh-decision-guard: dispose selectors')
+
   ctx.effect(() => {
     const off = ctx.on('tools/pre-execute', async (exec, next) => {
       const settings = settingsStore.get()
@@ -327,7 +430,7 @@ export function apply(ctx) {
         record({ tool: exec.name, verdict: 'check-failed', detail: failed })
         return {
           kind: 'deny',
-          reason: `dsh-sensitive-guard: 敏感命令规则无法编译（${failed}），已拒绝执行。请到设置里修正规则。`,
+          reason: `dsh-decision-guard: 敏感命令规则无法编译（${failed}），已拒绝执行。请到设置里修正规则。`,
         }
       }
       if (matches.length === 0) return next()
@@ -377,12 +480,12 @@ export function apply(ctx) {
           }
           return {
             kind: 'deny',
-            reason: `dsh-sensitive-guard: 命中敏感命令规则（${ruleLabel}），决策模型不可用（${decision.unavailable}），当前又是完全权限模式（没有任何沙箱边界），已拒绝执行。可在设置里改用「直接放行」，或先修好 API Key / 代理。`,
+            reason: `dsh-decision-guard: 命中敏感命令规则（${ruleLabel}），决策模型不可用（${decision.unavailable}），当前又是完全权限模式（没有任何沙箱边界），已拒绝执行。可在设置里改用「直接放行」，或先修好 API Key / 代理。`,
           }
         }
         return {
           kind: 'deny',
-          reason: `dsh-sensitive-guard: 命中敏感命令规则（${ruleLabel}），但决策模型不可用（${decision.unavailable}），已拒绝执行。请在设置里检查 API Key、代理与网络。`,
+          reason: `dsh-decision-guard: 命中敏感命令规则（${ruleLabel}），但决策模型不可用（${decision.unavailable}），已拒绝执行。请在设置里检查 API Key、代理与网络。`,
         }
       }
 
@@ -428,7 +531,7 @@ export function apply(ctx) {
       }
       return {
         kind: 'deny',
-        reason: `dsh-sensitive-guard: 决策模型判定这条命令有风险，已拒绝执行（命中规则 ${ruleLabel}，理由 ${decision.reason}${
+        reason: `dsh-decision-guard: 决策模型判定这条命令有风险，已拒绝执行（命中规则 ${ruleLabel}，理由 ${decision.reason}${
           decision.severity === undefined ? '' : `，风险 ${decision.severity}`
         }，置信 ${Math.round((decision.confidence ?? 0) * 100)}%）。如果确实要执行，请由用户手动操作，或调整敏感命令规则。`,
       }
@@ -436,15 +539,16 @@ export function apply(ctx) {
     return () => {
       off()
     }
-  }, 'dsh-sensitive-guard: tools/pre-execute')
+  }, 'dsh-decision-guard: tools/pre-execute')
 
   // ── 面板 HTTP 路由 ───────────────────────────────────────────────────────
-  ctx.effect(() => {
-    /**
-     * 没有 Web 服务（headless 等）时只跳过面板，守卫本身照常生效——
-     * 安全能力的可用性不该取决于有没有界面。
-     */
-    const server = ctx.get('webServer')
+  /**
+   * 用 `ctx.inject` 而不是一次性的 `ctx.get`：启动时各插件 fiber 并行初始化，
+   * `webServer` 可能比本插件晚就绪，取早了路由就永远补不上（面板读到 HTTP 404）。
+   * webServer 仍是可选依赖——headless 部署没有它时只丢面板，守卫本身照常生效。
+   */
+  ctx.inject(['webServer'], (webCtx) => {
+    const server = webCtx.get('webServer')
     if (server === undefined || typeof server.register !== 'function') return
 
     /** @type {Array<() => void>} */
@@ -535,6 +639,74 @@ export function apply(ctx) {
     const route = (suffix) => `${API_BASE}/${suffix}`
     /** @type {Array<[string, (req: any, res: any) => Promise<void> | void]>} */
     const handlers = [
+      [
+        route('select'),
+        async (req, res) => {
+          if (!allowed(req)) return sendJson(res, 403, { status: 'forbidden' })
+          const method = String(req.method ?? 'GET').toUpperCase()
+          /** @returns {object} 面板要的三块数据 */
+          const payload = () => {
+            const settings = settingsStore.get()
+            return {
+              tools: {
+                enabled: settings.toolsEnabled,
+                whitelist: settings.toolWhitelist,
+                minProbability: settings.toolMinProbability,
+              },
+              selection: {
+                skillsEnabled: settings.skillsEnabled,
+                skillLimit: settings.skillLimit,
+                skillMinProbability: settings.skillMinProbability,
+                filesEnabled: settings.filesEnabled,
+                fileCandidates: settings.fileCandidates,
+              },
+              stats: toolSelector.snapshot(),
+            }
+          }
+          if (method === 'GET' || method === 'HEAD') return sendJson(res, 200, { status: 'ok', ...payload() })
+          if (method !== 'POST') return sendJson(res, 405, { status: 'method' })
+          const body = await readJson(req)
+          if (body === undefined) return sendJson(res, 400, { status: 'bad-json' })
+          if (body['action'] === 'restore-all') {
+            return sendJson(res, 200, {
+              status: 'ok',
+              restored: toolSelector.restoreAll(),
+              ...payload(),
+            })
+          }
+          /** @type {Record<string, unknown>} */
+          const patch = {}
+          const tools = body['tools']
+          if (tools !== null && typeof tools === 'object') {
+            if (typeof tools['enabled'] === 'boolean') patch['toolsEnabled'] = tools['enabled']
+            if (typeof tools['minProbability'] === 'number') patch['toolMinProbability'] = tools['minProbability']
+            const whitelist = tools['whitelist']
+            if (Array.isArray(whitelist)) {
+              patch['toolWhitelist'] = whitelist.filter((name) => typeof name === 'string')
+            } else if (typeof whitelist === 'string') {
+              patch['toolWhitelist'] = whitelist.split(/[,，\s]+/).filter((name) => name !== '')
+            }
+          }
+          const selection = body['selection']
+          if (selection !== null && typeof selection === 'object') {
+            for (const key of ['skillsEnabled', 'filesEnabled']) {
+              if (typeof selection[key] === 'boolean') patch[key] = selection[key]
+            }
+            for (const key of ['skillLimit', 'skillMinProbability', 'fileCandidates']) {
+              if (typeof selection[key] === 'number') patch[key] = selection[key]
+            }
+          }
+          try {
+            settingsStore.update(patch)
+            return sendJson(res, 200, { status: 'ok', ...payload() })
+          } catch (error) {
+            return sendJson(res, 500, {
+              status: 'error',
+              message: error instanceof Error ? error.message : String(error),
+            })
+          }
+        },
+      ],
       [
         route('config'),
         async (req, res) => {
@@ -633,7 +805,7 @@ export function apply(ctx) {
         }
       }
     }
-  }, 'dsh-sensitive-guard: http routes')
+  })
 }
 
 export { CHECK_FAILED_RULE_ID }

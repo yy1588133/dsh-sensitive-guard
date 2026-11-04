@@ -1,8 +1,8 @@
 {
-  "name": "dsh-sensitive-guard",
-  "version": "0.1.0",
+  "name": "dsh-decision-guard",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Sensitive-command gate for DeepSeek Harness: rules plus a Jev decision model decide whether a risky shell command may run, closing the safety gap of full-access mode.",
+  "description": "Decision-model guard for DeepSeek Harness: sensitive-command approval plus on-demand tool loading, skill selection, and glob ranking driven by Jev.",
   "license": "MIT",
   "author": "yy1588133",
   "repository": {
@@ -31,16 +31,17 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/selftest.mjs && node test/tool-scope.mjs && node test/jev-protocol.mjs && node test/rules-parity.mjs"
+    "test": "node test/selftest.mjs && node test/tool-scope.mjs && node test/jev-protocol.mjs && node test/decision-judge.mjs && node test/tool-select.mjs && node test/skill-select.mjs && node test/file-rank.mjs && node test/rules-parity.mjs && node test/web-route-timing.mjs && node test/panel-shape.mjs"
   },
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",
     "approval",
     "sensitive-command",
-    "jev",
-    "typesafe",
-    "agent-safety"
+    "tool-selection",
+    "skill-selection",
+    "context-optimization",
+    "jev"
   ],
   "engines": {
     "node": ">=20",
@@ -53,7 +54,9 @@
     "client": {
       "platform": "web",
       "immediately": true,
-      "inject": ["@deepseek-ai/dsh-client-ui-settings"]
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
     }
   }
 }
