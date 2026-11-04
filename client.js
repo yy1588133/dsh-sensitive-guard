@@ -12,8 +12,8 @@ window.__ModuleLoader__.load({
     /** 中英文案。说明文字一律放进 `?` 提示里，界面上只留标题。 */
     const STR = {
       zh: {
-        sectionTitle: '敏感命令守门',
-        sectionDesc: '命中敏感命令规则时，先让决策模型判定能不能直接执行。',
+        sectionTitle: '决策模型守门',
+        sectionDesc: '敏感命令审批、工具与技能按需加载、glob 排序，共用一套决策模型。',
         tabRules: '命令规则',
         tabAssist: '决策模型辅助',
         enabled: '启用决策模型辅助',
@@ -129,7 +129,7 @@ window.__ModuleLoader__.load({
         selectReload: '重新读取',
       },
       en: {
-        sectionTitle: 'Sensitive Command Guard',
+        sectionTitle: 'Decision Guard',
         sectionDesc: 'A decision model judges matched commands before they run.',
         tabRules: 'Command rules',
         tabAssist: 'Decision model assist',
@@ -1532,7 +1532,7 @@ window.__ModuleLoader__.load({
               order: 470,
               label: () => {
                 const lang = pickLang()
-                return lang === 'zh' ? '敏感命令守门' : 'Sensitive Guard'
+                return lang === 'zh' ? '决策模型守门' : 'Decision Guard'
               },
             },
             SensitiveGuardSection,

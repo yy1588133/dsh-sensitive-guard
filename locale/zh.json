@@ -32,5 +32,6 @@
     "selectUnavailable": "读不到按需加载设置：{msg}",
     "selectUnavailableHelp": "这个页签要用后端的 /sensitive-guard/api/select 接口。接口没就绪时会一直显示这条提示，更新插件后重启 DSH 即可。",
     "selectReload": "重新读取"
-  }
+  },
+  "title": "决策模型守门"
 }

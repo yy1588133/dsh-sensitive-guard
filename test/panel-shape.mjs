@@ -124,7 +124,7 @@ test('新键都落在新前缀下，没有覆盖旧键', () => {
 test('原有两个页签的文案没变', () => {
   assert.equal(STR.zh.tabRules, '命令规则')
   assert.equal(STR.zh.tabAssist, '决策模型辅助')
-  assert.equal(STR.zh.sectionTitle, '敏感命令守门')
+  assert.equal(STR.zh.sectionTitle, '决策模型守门')
   assert.equal(STR.en.tabRules, 'Command rules')
   assert.equal(STR.en.tabAssist, 'Decision model assist')
   assert.equal(STR.zh.save, '保存')

@@ -32,5 +32,6 @@
     "selectUnavailable": "Could not read the on-demand settings: {msg}",
     "selectUnavailableHelp": "This tab needs the backend /sensitive-guard/api/select endpoint. While it is missing you keep seeing this note; restart DSH after updating the plugin.",
     "selectReload": "Reload"
-  }
+  },
+  "title": "Decision Guard"
 }
