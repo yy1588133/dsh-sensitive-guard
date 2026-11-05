@@ -93,6 +93,7 @@ function makeHarness({
         }
   const ctx = {
     get(name) {
+      if (name === 'skills') return ctx.skills
       return name === 'workingDirectory' ? workingDirectory : undefined
     },
     skills: {

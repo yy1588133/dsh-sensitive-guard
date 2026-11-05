@@ -61,7 +61,9 @@ function makeHarness({ settings = {}, probabilities = [0.9, 0.9, 0.9], judge, re
 
   const fakeCtx = {
     tools: {
-      schemas: async () => tools.list.map((tool) => ({ ...tool })),
+      // 真实宿主里 schemas 返回的是「当前可见工具」：被掩码隐藏的不在列表里。
+      // mock 必须照这个语义来，否则恢复逻辑的 bug 会被掩盖。
+      schemas: async () => tools.list.filter((tool) => !active.includes(tool.name)).map((tool) => ({ ...tool })),
     },
   }
 

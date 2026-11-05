@@ -362,11 +362,11 @@ export function apply(ctx) {
         },
         output: {
           schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-          render: (_args, value) => [{ type: 'text', text: String(value?.text ?? '') }],
+          render: (_args, value) => [{ type: 'text', text: String(value.text) }],
         },
         async execute(args, exec) {
           const result = await toolSelector.search(exec.agent, args ?? {}, exec.signal)
-          return { text: typeof result?.text === 'string' ? result.text : '工具检索没有返回内容。' }
+          return { text: result.text }
         },
       }),
     'dsh-decision-guard: tool_search',
@@ -398,7 +398,7 @@ export function apply(ctx) {
             {
               type: 'text',
               text:
-                (Array.isArray(value?.skills) ? value.skills : [])
+                value.skills
                   .map((skill) => `- ${skill.name}: ${skill.description}`)
                   .join('\n') || '当前没有可加载的技能。',
             },

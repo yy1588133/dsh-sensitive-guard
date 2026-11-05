@@ -197,8 +197,8 @@ test('locale 两种语言都补齐了新键，且与 client 文案一致', () =>
 test('locale 原有 meta 段没被覆盖', () => {
   const zh = readLocale('zh')
   const en = readLocale('en')
-  assert.equal(zh.meta.title, '敏感命令守门')
-  assert.equal(en.meta.title, 'Sensitive Command Guard')
+  assert.equal(zh.meta.title, '决策模型守门')
+  assert.equal(en.meta.title, 'Decision Guard')
   assert.equal(typeof zh.meta.description, 'string')
   assert.equal(typeof en.meta.description, 'string')
 })

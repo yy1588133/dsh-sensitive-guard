@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-sensitive-guard',
+  id: 'dsh-decision-guard',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -7,7 +7,7 @@ window.__ModuleLoader__.load({
     /** 面板 HTTP 前缀，与 Host 侧 index.js 的 API_BASE 一致。 */
     const API_BASE = '/sensitive-guard/api'
     /** Host 条目 id，也是设置页的 section id。 */
-    const SECTION_ID = 'dsh-sensitive-guard'
+    const SECTION_ID = 'dsh-decision-guard'
 
     /** 中英文案。说明文字一律放进 `?` 提示里，界面上只留标题。 */
     const STR = {
@@ -105,17 +105,17 @@ window.__ModuleLoader__.load({
         selectWhitelistPlaceholder: 'read, write, edit, bash',
         selectMinProbability: '相关性阈值',
         selectMinProbabilityHelp: '0-1 之间。判定概率高于该值的工具才保留，数值越高隐藏得越多。默认 0.5。',
-        selectStats: '本会话状态',
+        selectStats: '隐藏状态',
         selectStatsNone: '当前没有隐藏的工具，工具清单是完整的。',
         selectStatsHidden: '已隐藏 {n} 个工具',
         selectStatsSaved: '估算少发 {tokens} tokens',
         selectRestoreAll: '恢复全部工具',
-        selectRestoreConfirm: '把本会话隐藏的工具全部恢复？只撤销这次对话的隐藏，不动上面的设置。',
+        selectRestoreConfirm: '把所有会话里隐藏的工具全部恢复？只撤销隐藏状态，不动上面的设置。',
         selectSkillsEnabled: '按任务挑选技能',
         selectSkillsEnabledHelp:
           '默认关闭。开启后先把技能目录按当前任务排序，只保留最相关的几个，省下其余技能的说明文字。',
         selectSkillLimit: '最多保留技能数',
-        selectSkillLimitHelp: '1-200，默认 8。排在前面这么多名的技能保留，其余暂时隐藏。',
+        selectSkillLimitHelp: '1-20，默认 8。排在前面这么多名的技能保留，其余暂时隐藏。',
         selectSkillMinProbability: '技能相关阈值',
         selectSkillMinProbabilityHelp: '0-1 之间，默认 0.5。低于该概率的技能不入选。',
         selectFilesEnabled: '文件结果排序',
@@ -226,18 +226,18 @@ window.__ModuleLoader__.load({
         selectMinProbability: 'Relevance threshold',
         selectMinProbabilityHelp:
           'Between 0 and 1. Tools judged above it are kept; a higher value hides more. Defaults to 0.5.',
-        selectStats: 'This session',
+        selectStats: 'Hiding status',
         selectStatsNone: 'Nothing is hidden; the tool list is complete.',
         selectStatsHidden: '{n} tools hidden',
         selectStatsSaved: 'about {tokens} tokens saved',
         selectRestoreAll: 'Restore all tools',
         selectRestoreConfirm:
-          'Restore every tool hidden in this session? Only hiding in this conversation is undone; the settings above stay.',
+          'Restore every tool hidden in any session? Only the hiding is undone; the settings above stay.',
         selectSkillsEnabled: 'Pick skills per task',
         selectSkillsEnabledHelp:
           'Off by default. When on, the skill catalog is ranked against the task and only the most relevant few are kept, saving the other descriptions.',
         selectSkillLimit: 'Skills to keep',
-        selectSkillLimitHelp: '1-200, default 8. The top-ranked skills are kept and the rest are hidden for now.',
+        selectSkillLimitHelp: '1-20, default 8. The top-ranked skills are kept and the rest are hidden for now.',
         selectSkillMinProbability: 'Skill relevance threshold',
         selectSkillMinProbabilityHelp: 'Between 0 and 1, default 0.5. Skills below it are not selected.',
         selectFilesEnabled: 'Rank file results',
@@ -262,9 +262,9 @@ window.__ModuleLoader__.load({
     /** 取一段文案并填充占位符。 */
     function makeT() {
       const lang = pickLang()
-      const dict = STR[lang] ?? STR.en
+      const dict = STR[lang]
       return (key, values) => {
-        const template = dict[key] ?? STR.en[key] ?? key
+        const template = dict[key] ?? key
         if (values === undefined) return template
         return Object.entries(values).reduce(
           (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
@@ -635,7 +635,7 @@ window.__ModuleLoader__.load({
             },
             title: entry.command ?? '',
           },
-          `${entry.tool ?? ''}${entry.rules === undefined ? '' : ` · ${entry.rules}`}${
+          `${entry.tool}${entry.rules === undefined ? '' : ` · ${entry.rules}`}${
             entry.reason === undefined ? '' : ` · ${entry.reason}`
           }${entry.detail === undefined ? '' : ` · ${entry.detail}`}`,
         ),
@@ -674,8 +674,8 @@ window.__ModuleLoader__.load({
             api('log'),
           ])
           setConfig(configResult.config)
-          setRules(rulesResult.rules ?? [])
-          setLogEntries(logResult.entries ?? [])
+          setRules(rulesResult.rules)
+          setLogEntries(logResult.entries)
           setError('')
         } catch (loadError) {
           setError(loadError instanceof Error ? loadError.message : String(loadError))
@@ -708,7 +708,7 @@ window.__ModuleLoader__.load({
       }, [loadSelect])
 
       /** 本地改一个字段，延迟到「保存」才落盘。 */
-      const patch = (values) => setConfig((current) => ({ ...(current ?? {}), ...values }))
+      const patch = (values) => setConfig((current) => ({ ...current, ...values }))
 
       /** 把「参与检查的工具」输入框解析成数组：空就是空数组（= 全查）。 */
       const parseTools = () => {
@@ -719,12 +719,11 @@ window.__ModuleLoader__.load({
             .map((item) => item.trim())
             .filter((item) => item !== '')
         }
-        return Array.isArray(config.commandTools) ? config.commandTools : []
+        return config.commandTools
       }
 
       /** 保存配置。 */
       const save = async () => {
-        if (config === undefined) return
         setBusy(true)
         setStatus('')
         try {
@@ -741,9 +740,9 @@ window.__ModuleLoader__.load({
             onUnavailable: config.onUnavailable,
             commandTools: parseTools(),
           }
-          if (typeof config.apiKey === 'string' && !config.apiKey.startsWith('••••')) body.apiKey = config.apiKey
+          if (!config.apiKey.startsWith('••••')) body.apiKey = config.apiKey
           const result = await api('config', { method: 'POST', body: JSON.stringify(body) })
-          setConfig({ ...result.config, commandToolsText: (result.config.commandTools ?? []).join(', ') })
+          setConfig({ ...result.config, commandToolsText: result.config.commandTools.join(', ') })
           setStatus(t('saved'))
         } catch (saveError) {
           setStatus(`${t('saveFailed')}: ${saveError instanceof Error ? saveError.message : String(saveError)}`)
@@ -757,7 +756,7 @@ window.__ModuleLoader__.load({
         setTesting(true)
         setStatus('')
         try {
-          const result = await api('test', { method: 'POST', body: JSON.stringify({ apiKey: config?.apiKey }) })
+          const result = await api('test', { method: 'POST', body: JSON.stringify({ apiKey: config.apiKey }) })
           const outcome = result.result
           setStatus(
             outcome.ok
@@ -777,7 +776,7 @@ window.__ModuleLoader__.load({
       const ruleAction = async (body) => {
         try {
           const result = await api('rules', { method: 'POST', body: JSON.stringify(body) })
-          setRules(result.rules ?? [])
+          setRules(result.rules)
         } catch (ruleError) {
           setStatus(`${t('saveFailed')}: ${ruleError instanceof Error ? ruleError.message : String(ruleError)}`)
         }
@@ -788,14 +787,14 @@ window.__ModuleLoader__.load({
         if (!window.confirm(t('recentClearConfirm'))) return
         try {
           const result = await api('log', { method: 'DELETE' })
-          setLogEntries(result.entries ?? [])
+          setLogEntries(result.entries)
         } catch (clearError) {
           setStatus(`${t('saveFailed')}: ${clearError instanceof Error ? clearError.message : String(clearError)}`)
         }
       }
 
       /** 改动按需加载草稿里的字段，等「保存」才落盘。 */
-      const patchSelect = (values) => setSelectDraft((current) => ({ ...(current ?? {}), ...values }))
+      const patchSelect = (values) => setSelectDraft((current) => ({ ...current, ...values }))
 
       /**
        * 提交 select 的一部分；只发本页签拥有的那一半，另一半留在后端。
@@ -833,7 +832,7 @@ window.__ModuleLoader__.load({
         saveSelect({
           selection: {
             skillsEnabled: selectDraft.skillsEnabled,
-            skillLimit: intOr(selectDraft.skillLimit, 8, 1, 200),
+            skillLimit: intOr(selectDraft.skillLimit, 8, 1, 20),
             skillMinProbability: clamp01(selectDraft.skillMinProbability, 0.5),
             filesEnabled: selectDraft.filesEnabled,
             fileCandidates: intOr(selectDraft.fileCandidates, 40, 1, 200),
@@ -932,7 +931,7 @@ window.__ModuleLoader__.load({
           title: t('contextCount'),
           help: t('contextCountHelp'),
           children: h(TextInput, {
-            value: String(config.contextMessageCount ?? 8),
+            value: String(config.contextMessageCount),
             type: 'number',
             width: 90,
             disabled: !config.useConversationContext,
@@ -948,7 +947,7 @@ window.__ModuleLoader__.load({
           title: t('apiKey'),
           help: `${t('apiKeyHelp')} ${config.apiKeySet ? `(${t('keySet')})` : `(${t('keyUnset')})`}`,
           children: h(TextInput, {
-            value: config.apiKey ?? '',
+            value: config.apiKey,
             type: 'password',
             placeholder: t('apiKeyPlaceholder'),
             width: 300,
@@ -959,7 +958,7 @@ window.__ModuleLoader__.load({
           title: t('endpoint'),
           help: t('endpointHelp'),
           children: h(TextInput, {
-            value: config.endpoint ?? '',
+            value: config.endpoint,
             width: 320,
             onChange: (value) => patch({ endpoint: value }),
           }),
@@ -968,7 +967,7 @@ window.__ModuleLoader__.load({
           title: t('model'),
           help: t('modelHelp'),
           children: h(TextInput, {
-            value: config.model ?? '',
+            value: config.model,
             width: 180,
             onChange: (value) => patch({ model: value }),
           }),
@@ -976,12 +975,12 @@ window.__ModuleLoader__.load({
         h(Row, {
           title: t('proxy'),
           help: `${t('proxyHelp')}\n${t('proxyCurrent')}: ${
-            config.proxyInfo?.source === 'direct'
+            config.proxyInfo.source === 'direct'
               ? t('proxyDirect')
-              : `${config.proxyInfo?.endpoint ?? ''} (${config.proxyInfo?.source ?? ''})`
+              : `${config.proxyInfo.endpoint} (${config.proxyInfo.source})`
           }`,
           children: h(TextInput, {
-            value: config.proxy ?? '',
+            value: config.proxy,
             placeholder: 'http://127.0.0.1:7890',
             width: 240,
             onChange: (value) => patch({ proxy: value }),
@@ -991,7 +990,7 @@ window.__ModuleLoader__.load({
           title: t('timeout'),
           help: t('timeoutHelp'),
           children: h(TextInput, {
-            value: String(config.timeoutMs ?? 3000),
+            value: String(config.timeoutMs),
             type: 'number',
             width: 90,
             onChange: (value) => patch({ timeoutMs: value }),
@@ -1001,7 +1000,7 @@ window.__ModuleLoader__.load({
           title: t('onUnavailable'),
           help: t('onUnavailableHelp'),
           children: h(Select, {
-            value: config.onUnavailable ?? 'follow-sandbox',
+            value: config.onUnavailable,
             width: 180,
             onChange: (value) => patch({ onUnavailable: value }),
             options: [
@@ -1015,7 +1014,7 @@ window.__ModuleLoader__.load({
           title: t('commandTools'),
           help: t('commandToolsHelp'),
           children: h(TextInput, {
-            value: config.commandToolsText ?? (config.commandTools ?? []).join(', '),
+            value: config.commandToolsText ?? config.commandTools.join(', '),
             width: 320,
             placeholder: t('commandToolsPlaceholder'),
             onChange: (value) => patch({ commandToolsText: value }),
@@ -1248,8 +1247,8 @@ window.__ModuleLoader__.load({
             ),
       )
 
-      const hidden = Array.isArray(selectState?.stats?.hidden) ? selectState.stats.hidden : []
-      const savedTokens = Number(selectState?.stats?.savedTokens ?? 0) || 0
+      const hidden = selectState?.stats?.hidden ?? []
+      const savedTokens = selectState?.stats?.savedTokens ?? 0
 
       /** select 接口没就绪时的提示盒：说明原因，给一个重读按钮。 */
       const selectUnavailablePanel = h(
@@ -1299,7 +1298,7 @@ window.__ModuleLoader__.load({
             { primary: true, disabled: selectBusy, onClick: () => void onSave() },
             selectBusy ? t('saving') : t('save'),
           ),
-          extra ?? null,
+          extra,
           selectStatus === ''
             ? null
             : h(
