@@ -52,7 +52,7 @@ const USER_MESSAGE = [
  * @param {(request: { deny: string[] }) => (() => void)} [options.restrict] 自定义 restrict
  * @param {string[]} [options.scoped] 出现在 schemas 里、但 restrict 不认的作用域工具
  */
-function makeHarness({ settings = {}, probabilities = [0.9, 0.9, 0.9], judge, restrict, scoped = [] } = {}) {
+function makeHarness({ settings = {}, probabilities = [0.9, 0.9, 0.9], judge, restrict, scoped = [], state, sessionUserMessages = 0 } = {}) {
   const scopedNames = new Set(scoped)
   const tools = { list: DEFAULT_TOOLS.map((tool) => ({ ...tool })) }
   const judgeCalls = []
@@ -90,6 +90,7 @@ function makeHarness({ settings = {}, probabilities = [0.9, 0.9, 0.9], judge, re
   const agent = {
     id: 'agent-1',
     ctx: { tools: { restrict: (request) => restrictImpl(request) } },
+    session: { snapshotEvents: () => Array.from({ length: sessionUserMessages }, () => ({ type: 'user/message' })) },
   }
 
   const judgeImpl =
@@ -110,6 +111,7 @@ function makeHarness({ settings = {}, probabilities = [0.9, 0.9, 0.9], judge, re
     getSettings: () => ({ toolsEnabled: false, toolWhitelist: [], toolMinProbability: 0.5, ...settings }),
     logger: { warn: (message) => loggerCalls.push(message) },
     record: (entry) => records.push(entry),
+    state,
   })
 
   return {
@@ -258,6 +260,30 @@ await test('ops_* 核心工具默认不进候选，模型摘不到', async () =>
     .join('\n')
   assert.doesNotMatch(prompts, /ops_bash/)
   assert.doesNotMatch(prompts, /ops_read_files/)
+})
+
+await test('重启后恢复上次隐藏集，不再问模型', async () => {
+  const saved = new Map()
+  const state = {
+    getTool: (id) => saved.get(id),
+    setTool: (id, value) => saved.set(id, value),
+  }
+  const first = makeHarness({ settings: { toolsEnabled: true }, probabilities: [0.9, 0.02, 0.02], state })
+  await first.selector.onPreStep({ kind: 'continue' }, first.agent, USER_MESSAGE)
+  assert.deepEqual(first.state(), ['web_search', 'cron_create'])
+
+  // 模拟重启：新 selector，共用同一份会话状态
+  const second = makeHarness({ settings: { toolsEnabled: true }, state })
+  await second.selector.onPreStep({ kind: 'continue' }, second.agent, USER_MESSAGE)
+  assert.equal(second.judgeCalls.length, 0, '重启后不应重新问模型')
+  assert.deepEqual(second.state(), ['web_search', 'cron_create'])
+})
+
+await test('非首轮且没有历史结果：不评估，保持完整工具表', async () => {
+  const h = makeHarness({ settings: { toolsEnabled: true }, sessionUserMessages: 3 })
+  await h.selector.onPreStep({ kind: 'continue' }, h.agent, USER_MESSAGE)
+  assert.equal(h.judgeCalls.length, 0)
+  assert.deepEqual(h.state(), [])
 })
 
 // ── 召回 ────────────────────────────────────────────────────────────

@@ -31,7 +31,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/selftest.mjs && node test/tool-scope.mjs && node test/jev-protocol.mjs && node test/decision-judge.mjs && node test/tool-select.mjs && node test/skill-select.mjs && node test/file-rank.mjs && node test/records.mjs && node test/rules-parity.mjs && node test/web-route-timing.mjs && node test/panel-shape.mjs"
+    "test": "node test/selftest.mjs && node test/tool-scope.mjs && node test/jev-protocol.mjs && node test/decision-judge.mjs && node test/tool-select.mjs && node test/skill-select.mjs && node test/file-rank.mjs && node test/records.mjs && node test/session-state.mjs && node test/rules-parity.mjs && node test/web-route-timing.mjs && node test/panel-shape.mjs"
   },
   "keywords": [
     "dsh-plugin",

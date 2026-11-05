@@ -28,6 +28,7 @@ import { createFileRanker } from './lib/file-rank.js'
 import { createToolSelector } from './lib/tool-select.js'
 import { COMMAND_FIELD_NAMES, RulesStore, SettingsStore, dataDir, dshHome } from './lib/store.js'
 import { CATEGORIES, createRecordStore } from './lib/records.js'
+import { createSessionState } from './lib/session-state.js'
 
 export const name = 'dsh-decision-guard'
 
@@ -249,6 +250,8 @@ export function apply(ctx) {
   const client = new DecisionClient({ getSettings: () => settingsStore.get(), logger })
   // 判定记录按分类落盘；写失败只记日志，不影响判定。
   const records = createRecordStore({ dir: dataDir(), logger })
+  // 会话级评估结果：重启后恢复上一次的隐藏集/保留集，不必重新问模型。
+  const sessionState = createSessionState({ dir: dataDir(), logger })
 
   /**
    * 三个新功能共用同一个连接与冷却：判断失败只影响那一次功能，不影响命令守门。
@@ -260,6 +263,7 @@ export function apply(ctx) {
     getSettings: () => settingsStore.get(),
     logger,
     record: (entry) => records.add('skill', entry),
+    state: sessionState,
   })
   // 排序模块自己在 tools/execute 与 tools/post-execute 上挂链，这里只创建一次。
   createFileRanker({ ctx, client, getSettings: () => settingsStore.get(), logger })
@@ -272,6 +276,7 @@ export function apply(ctx) {
     getSettings: () => settingsStore.get(),
     logger,
     record: (entry) => records.add('tool', entry),
+    state: sessionState,
   })
 
   /**
@@ -420,6 +425,7 @@ export function apply(ctx) {
 
   ctx.effect(() => () => toolSelector.dispose(), 'dsh-decision-guard: dispose selectors')
   ctx.effect(() => () => records.flush(), 'dsh-decision-guard: flush records')
+  ctx.effect(() => () => sessionState.flush(), 'dsh-decision-guard: flush session state')
 
   ctx.effect(() => {
     const off = ctx.on('tools/pre-execute', async (exec, next) => {

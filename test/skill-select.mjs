@@ -77,12 +77,20 @@ function makeHarness({
   answers = {},
   unavailable,
   judgeThrows = false,
+  state,
+  sessionUserMessages = 0,
 } = {}) {
   /** @type {any[]} */
   const snapshotCalls = []
   /** @type {any[]} */
   const judgeCalls = []
-  const agent = { id: 'agent-1', session: { header: { cwd: headerCwd } } }
+  const agent = {
+    id: 'agent-1',
+    session: {
+      header: { cwd: headerCwd },
+      snapshotEvents: () => Array.from({ length: sessionUserMessages }, () => ({ type: 'user/message' })),
+    },
+  }
   const workingDirectory =
     workingDirectoryCwd === undefined
       ? undefined
@@ -118,6 +126,7 @@ function makeHarness({
     client,
     getSettings: () => settings,
     logger: { warn: () => {} },
+    state,
   })
   return { selector, agent, snapshotCalls, judgeCalls }
 }
@@ -345,6 +354,28 @@ await test('同一 turn 内不重复读快照，新用户消息才重新检查',
   await selector.onPreStep(next, agent, undefined, undefined)
   assert.equal(snapshotCalls.length, 2, '新用户消息应重新检查快照')
   assert.equal(judgeCalls.length, 1, '技能集合没变，不重判')
+})
+
+await test('重启后恢复上次技能结果，不再问模型', async () => {
+  const saved = new Map()
+  const state = { getSkill: (id) => saved.get(id), setSkill: (id, value) => saved.set(id, value) }
+  const skills = [skill('alpha', '审计代码'), skill('beta', '写周报'), skill('gamma', '边界扫描')]
+  const first = makeHarness({ skills, answers: answersOf([0.9, 0.2, 0.2]), state })
+  const firstResult = await first.selector.onPreStep(decision, first.agent, undefined, undefined)
+  assert.deepEqual(firstResult.messages[1].source.entries.map((entry) => entry.name), ['alpha'])
+
+  // 模拟重启：新 selector，共用同一份会话状态
+  const second = makeHarness({ skills, state })
+  const secondResult = await second.selector.onPreStep(decision, second.agent, undefined, undefined)
+  assert.equal(second.judgeCalls.length, 0, '重启后不应重新问模型')
+  assert.deepEqual(secondResult.messages[1].source.entries.map((entry) => entry.name), ['alpha'])
+})
+
+await test('非首轮且没有历史结果：不裁剪，保持宿主目录', async () => {
+  const h = makeHarness({ skills: [skill('alpha', '审计代码'), skill('beta', '写周报')], sessionUserMessages: 3 })
+  const result = await h.selector.onPreStep(decision, h.agent, undefined, undefined)
+  assert.equal(result, decision)
+  assert.equal(h.judgeCalls.length, 0)
 })
 
 console.log(`skill-select: ${passed} passed`)

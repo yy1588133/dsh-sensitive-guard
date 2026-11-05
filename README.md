@@ -38,7 +38,7 @@ dsh plugin --profile <你的 profile> add yy1588133/dsh-sensitive-guard
 2. 用不上的工具被 `tools.restrict({ deny })` 摘掉——它们整份 schema 不再进入请求，模型看不到，也调不了。
 3. 同时常驻一个 `tool_search` 工具：模型发现缺能力时，不带参数调用它就能看到被摘掉的工具，`enable: ["名字"]` 取回指定工具，`all: true` 全部取回。
 
-**每会话只评估一次。** 工具表一变，prompt 前缀就作废，KV 缓存跟着重算；为了省 token 反而每轮重算一次，不划算。换任务了想让模型重新判断，新开一个会话即可。
+**每会话只评估一次。** 工具表一变，prompt 前缀就作废，KV 缓存跟着重算；为了省 token 反而每轮重算一次，不划算。评估结果按会话落盘（`sessions.json`）：重启后遇到同一个会话，直接恢复上次的隐藏集，不再问模型；如果会话在插件开启前就开始了（事件里已有多条用户消息），也不会被当成首轮补评估。换任务了想让模型重新判断，新开一个会话即可。
 
 **白名单永远不会被摘。** 默认分两组：通用名（`read`、`write`、`edit`、`bash`、`glob`、`grep`、`todo`）和本环境实际工具名（`ops_read_files`、`ops_bash`、`ops_glob`、`ops_grep`、`ops_inspect_local_file`、`ops_result`、`ops_discover_tools`、`todo_write`），再加 `skill`、`tool_search`、`skill_catalog`。你可以在面板里追加。少了这些，模型连「把工具找回来」这一步都做不了。
 
@@ -59,7 +59,7 @@ dsh plugin --profile <你的 profile> add yy1588133/dsh-sensitive-guard
 - **其余的进按需池**：超上限的和没过线的一样，从目录里去掉，但不删除、不禁用。
 - **全都没过线时目录为空**，并留一句提示告诉模型去 `skill_catalog` 找。
 
-**评估频率**：每个会话一次。只有出现新的用户消息时才读技能快照、比对指纹；同一 turn 内的后续 step 直接用上次结果重写目录，不联网、不读快照。技能集合（名字 + 描述）或技能设置变了才重新问模型——目录内容稳定，prompt 前缀不会每轮抖动。
+**评估频率**：每个会话一次。只有出现新的用户消息时才读技能快照、比对指纹；同一 turn 内的后续 step 直接用上次结果重写目录，不联网、不读快照。结果按会话落盘，重启后指纹对得上就直接恢复，不重新问模型；非首轮且没有历史结果的会话不补评估。技能集合（名字 + 描述）或技能设置变了才重新问模型——目录内容稳定，prompt 前缀不会每轮抖动。
 
 **技能没有被禁用。** 目录只是摘要清单，`skill` 工具仍能按名字加载任意技能。模型需要找被裁掉的技能时调用 `skill_catalog`：默认只列按需池（结果短），传 `scope: "all"` 才列全部。所以裁错了最多是「模型一时没看到」，不会「这个技能用不了」。
 
@@ -110,6 +110,7 @@ curl -s -X POST http://127.0.0.1:55422/sensitive-guard/api/select -H 'content-ty
 - **复制**：每条右侧「复制」按钮，复制完整 JSON，方便贴出来排查。
 - **清空**：只清当前分类，其他分类与设置不动。
 - 文件损坏时先备份成 `records.json.corrupt-<时间戳>` 再重建，不会悄悄覆盖。
+- 会话级评估结果另存在 `sessions.json`（保留最近 50 个会话），重启后用它恢复隐藏集与技能保留集，不必重新问模型。
 
 命令行：
 
@@ -131,10 +132,11 @@ node test/selftest.mjs        # 规则匹配、设置规整（38 例）
 node test/tool-scope.mjs      # 工具范围判定（14 例）
 node test/jev-protocol.mjs    # 请求体、答案解析、失败降级、缓存冷却（22 例）
 node test/decision-judge.mjs  # 通用 judge 的降级路径（4 例）
-node test/tool-select.mjs     # 工具隐藏/召回/白名单/作用域工具跳过（7 例）
-node test/skill-select.mjs    # 技能裁剪/上限/按需池/缓存复用（10 例）
+node test/tool-select.mjs     # 工具隐藏/召回/白名单/作用域工具跳过/重启恢复（10 例）
+node test/skill-select.mjs    # 技能裁剪/上限/按需池/缓存复用/重启恢复（14 例）
 node test/file-rank.mjs       # glob 排序/超候选/路径不丢（9 例）
-node test/records.mjs         # 记录分页/持久化/损坏备份（5 例）
+node test/records.mjs         # 记录分页/持久化/损坏备份（7 例）
+node test/session-state.mjs   # 会话状态持久化/首轮判断（5 例）
 node test/rules-parity.mjs    # 与 snow-app 的 43 条规则逐条比对
 node test/web-route-timing.mjs# 面板路由挂载时机（4 例）
 node test/panel-shape.mjs     # 面板结构/分类/分页/复制契约（29 例）
