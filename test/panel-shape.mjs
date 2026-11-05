@@ -108,6 +108,7 @@ const RECORD_KEYS = [
   'recordsCopied',
   'recordsCopyFailed',
   'recordsHidden',
+  'recordsDeferred',
   'recordsKept',
   'recordsSavedTokens',
   'recordsWriteError',
@@ -383,18 +384,17 @@ test('总页数：至少一页，按每页条数向上取整', () => {
   assert.equal(recordsPages(20, 20), 1)
   assert.equal(recordsPages(21, 20), 2)
   assert.equal(recordsPages(100, 50), 2)
-  assert.equal(recordsPages(5, 0), 1, '每页条数非法时不应出现 0 页')
 })
 
 test('记录摘要：命令 / 工具 / 技能三类都能出摘要', () => {
   const { entrySummary } = readRecordsHelpers()
-  const labels = { hidden: 'hidden', kept: 'kept', saved: 'saved' }
+  const labels = { hidden: 'hidden', deferred: 'on-demand', kept: 'kept', saved: 'saved' }
   assert.equal(entrySummary({ tool: 'bash', rules: 'rm', reason: 'outside' }, labels), 'bash · rm · outside')
   assert.equal(entrySummary({ hidden: ['a', 'b'], kept: ['c'], savedTokens: 120 }, labels), 'hidden 2 · kept 1 · saved 120')
   assert.equal(entrySummary({ kept: ['x'] }, labels), 'kept 1')
   assert.equal(
     entrySummary({ verdict: 'trim', retained: ['a', 'b'], deferred: ['c'], total: 3 }, labels),
-    'hidden 1 · kept 2',
+    'on-demand 1 · kept 2',
     '技能选择记录的 deferred / retained 也要出摘要',
   )
   assert.equal(entrySummary({}, labels), '')

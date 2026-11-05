@@ -52,6 +52,7 @@
     "recordsKept": "kept",
     "recordsSavedTokens": "saved",
     "recordsWriteError": "Recording to disk failed: {msg}",
-    "recordsLoadFailed": "Could not load records: {msg}"
+    "recordsLoadFailed": "Could not load records: {msg}",
+    "recordsDeferred": "on-demand"
   }
 }

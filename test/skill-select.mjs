@@ -306,4 +306,23 @@ await test('catalog：默认只列按需池，all 列全部，无记录时回退
   assert.match(unavailable.note, /暂时不可用/)
 })
 
+await test('技能设置变了：同一技能集合也要重新判定', async () => {
+  const settings = settingsWith({ skillLimit: 2 })
+  const skills = [skill('alpha', '审计代码'), skill('beta', '写周报'), skill('gamma', '边界扫描')]
+  const { selector, agent, judgeCalls } = makeHarness({
+    skills,
+    settings,
+    answers: answersOf([0.9, 0.8, 0.7]),
+  })
+
+  const first = await selector.onPreStep(decision, agent, undefined, undefined)
+  assert.equal(judgeCalls.length, 1)
+  assert.equal(first.messages[1].source.entries.length, 2)
+
+  settings.skillLimit = 1
+  const second = await selector.onPreStep(decision, agent, undefined, undefined)
+  assert.equal(judgeCalls.length, 2, '设置变了应重新判定')
+  assert.deepEqual(second.messages[1].source.entries.map((entry) => entry.name), ['alpha'])
+})
+
 console.log(`skill-select: ${passed} passed`)

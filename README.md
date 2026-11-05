@@ -105,8 +105,8 @@ curl -s -X POST http://127.0.0.1:55422/sensitive-guard/api/select -H 'content-ty
 | 工具选择 | 隐藏/保留的工具、估算省下的 token |
 | 技能选择 | 保留与按需池的技能名、总数 |
 
-- **落盘**：`$DSH_HOME/plugins/dsh-decision-guard/records.json`，每类最多 500 条，重启不丢。
-- **分页**：默认每页 20 条，可切 10/20/50/100；页码越界返回空页。
+- **落盘**：`$DSH_HOME/plugins/dsh-decision-guard/records.json`，每类最多 500 条。正常关闭或重启不丢；进程被硬杀时最多丢最后 200ms 的几条。
+- **分页**：默认每页 20 条，可切 10/20/50/100；页码超出总页数时收敛到最后一页。
 - **复制**：每条右侧「复制」按钮，复制完整 JSON，方便贴出来排查。
 - **清空**：只清当前分类，其他分类与设置不动。
 - 文件损坏时先备份成 `records.json.corrupt-<时间戳>` 再重建，不会悄悄覆盖。

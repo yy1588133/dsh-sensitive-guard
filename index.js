@@ -792,7 +792,7 @@ export function apply(ctx) {
         route('records'),
         async (req, res) => {
           if (!allowed(req)) return sendJson(res, 403, { status: 'forbidden' })
-          const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+          const url = new URL(req.url, 'http://127.0.0.1')
           const rawCategory = url.searchParams.get('category')
           const category = CATEGORIES.includes(rawCategory) ? rawCategory : undefined
           const method = String(req.method ?? 'GET').toUpperCase()
@@ -803,7 +803,8 @@ export function apply(ctx) {
             return sendJson(res, 200, { status: 'ok', ...result, writeError: records.writeError() })
           }
           if (method !== 'DELETE' && method !== 'POST') return sendJson(res, 405, { status: 'method' })
-          // 清空只影响观测记录，不动规则、设置和会话日志。
+          // 清空只影响观测记录，不动规则、设置和会话日志；分类写错一律拒绝，免得一按清空全没了。
+          if (category === undefined) return sendJson(res, 400, { status: 'bad-category' })
           records.clear(category)
           return sendJson(res, 200, { status: 'ok' })
         },

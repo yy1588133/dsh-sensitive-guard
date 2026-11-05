@@ -52,6 +52,7 @@
     "recordsKept": "保留",
     "recordsSavedTokens": "省下",
     "recordsWriteError": "记录写入磁盘失败：{msg}",
-    "recordsLoadFailed": "读取记录失败：{msg}"
+    "recordsLoadFailed": "读取记录失败：{msg}",
+    "recordsDeferred": "按需池"
   }
 }

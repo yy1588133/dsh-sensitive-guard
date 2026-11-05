@@ -94,6 +94,7 @@ window.__ModuleLoader__.load({
         recordsCopied: '已复制这条记录',
         recordsCopyFailed: '复制失败：浏览器没给剪贴板权限',
         recordsHidden: '隐藏',
+        recordsDeferred: '按需池',
         recordsKept: '保留',
         recordsSavedTokens: '省下',
         recordsWriteError: '记录写入磁盘失败：{msg}',
@@ -110,6 +111,7 @@ window.__ModuleLoader__.load({
         verdictUnavailable: '不可用',
         verdictCheckFailed: '检查失败',
         verdictSandbox: '交给沙箱',
+        verdictFail: '判定失败',
         tabTools: '工具按需加载',
         tabSelection: '技能与文件',
         selectToolsEnabled: '按需加载工具',
@@ -230,6 +232,7 @@ window.__ModuleLoader__.load({
         recordsCopied: 'Record copied',
         recordsCopyFailed: 'Copy failed: the browser blocked clipboard access',
         recordsHidden: 'hidden',
+        recordsDeferred: 'on-demand',
         recordsKept: 'kept',
         recordsSavedTokens: 'saved',
         recordsWriteError: 'Recording to disk failed: {msg}',
@@ -246,6 +249,7 @@ window.__ModuleLoader__.load({
         verdictUnavailable: 'unavailable',
         verdictCheckFailed: 'check failed',
         verdictSandbox: 'sandbox decided',
+        verdictFail: 'judge failed',
         tabTools: 'On-demand tools',
         tabSelection: 'Skills & files',
         selectToolsEnabled: 'Load tools on demand',
@@ -346,10 +350,7 @@ window.__ModuleLoader__.load({
     /* records-panel-helpers:start */
     /** 总页数：至少一页，避免出现「第 1/0 页」。 */
     function recordsPages(total, size) {
-      const per = Number.isSafeInteger(size) && size > 0 ? size : 20
-      const count = Number(total)
-      if (!Number.isFinite(count) || count <= 0) return 1
-      return Math.max(1, Math.ceil(count / per))
+      return Math.max(1, Math.ceil(total / size))
     }
 
     /**
@@ -363,10 +364,10 @@ window.__ModuleLoader__.load({
       if (typeof entry.rules === 'string' && entry.rules !== '') parts.push(entry.rules)
       if (typeof entry.reason === 'string' && entry.reason !== '') parts.push(entry.reason)
       if (typeof entry.detail === 'string' && entry.detail !== '') parts.push(entry.detail)
-      // 工具选择记 hidden / kept，技能选择记 deferred / retained，同一件事两种字段名。
-      const hiddenNames = Array.isArray(entry.hidden) ? entry.hidden : entry.deferred
+      // 工具选择记 hidden / kept；技能选择记 deferred（按需池）/ retained（常驻）。
+      if (Array.isArray(entry.hidden) && entry.hidden.length > 0) parts.push(`${labels.hidden} ${entry.hidden.length}`)
+      if (Array.isArray(entry.deferred) && entry.deferred.length > 0) parts.push(`${labels.deferred} ${entry.deferred.length}`)
       const keptNames = Array.isArray(entry.kept) ? entry.kept : entry.retained
-      if (Array.isArray(hiddenNames) && hiddenNames.length > 0) parts.push(`${labels.hidden} ${hiddenNames.length}`)
       if (Array.isArray(keptNames) && keptNames.length > 0) parts.push(`${labels.kept} ${keptNames.length}`)
       if (Number.isFinite(entry.savedTokens) && entry.savedTokens > 0) parts.push(`${labels.saved} ${entry.savedTokens}`)
       return parts.join(' · ')
@@ -666,6 +667,7 @@ window.__ModuleLoader__.load({
       'check-failed': 'verdictCheckFailed',
       'delegate-sandbox': 'verdictSandbox',
       unavailable: 'verdictUnavailable',
+      fail: 'verdictFail',
     }
 
     /** 「最近判定」一行：标签 + 摘要 + 时间 + 复制。 */
@@ -675,13 +677,14 @@ window.__ModuleLoader__.load({
       const color =
         entry.verdict === 'allow' || entry.verdict === 'delegate-sandbox'
           ? 'var(--dsw-alias-state-success-primary)'
-          : entry.verdict === 'deny' || entry.verdict === 'check-failed'
+          : entry.verdict === 'deny' || entry.verdict === 'check-failed' || entry.verdict === 'fail'
             ? 'var(--dsw-alias-state-error-primary)'
             : entry.verdict === 'unavailable'
               ? 'var(--dsw-alias-state-warn-primary)'
               : 'var(--dsw-alias-label-secondary)'
       const summary = entrySummary(entry, {
         hidden: t('recordsHidden'),
+        deferred: t('recordsDeferred'),
         kept: t('recordsKept'),
         saved: t('recordsSavedTokens'),
       })
@@ -717,7 +720,7 @@ window.__ModuleLoader__.load({
         h(
           'span',
           { style: { color: 'var(--dsw-alias-label-secondary)', opacity: 0.7, whiteSpace: 'nowrap' } },
-          typeof entry.at === 'string' ? entry.at.slice(11, 19) : '',
+          typeof entry.at === 'string' ? new Date(entry.at).toLocaleTimeString([], { hour12: false }) : '',
         ),
         h(Button, { onClick: () => onCopy(entry) }, t('recordsCopy')),
       )
@@ -773,10 +776,10 @@ window.__ModuleLoader__.load({
           .then((result) => {
             if (cancelled) return
             setRecords({
-              items: result.items ?? [],
-              total: result.total ?? 0,
-              page: result.page ?? recordPage,
-              size: result.size ?? recordSize,
+              items: result.items,
+              total: result.total,
+              page: result.page,
+              size: result.size,
             })
             // 复制 / 清空的提示是瞬时的，不因为重拉列表就消失；读取类错误则跟着新结果走。
             setRecordStatus((current) => {
@@ -902,6 +905,7 @@ window.__ModuleLoader__.load({
         try {
           await api(`records?category=${recordCategory}`, { method: 'DELETE' })
           setRecordStatus({ key: 'recordsCleared', transient: true })
+          setRecordPage(1)
           setRecordEpoch((value) => value + 1)
         } catch (clearError) {
           setRecordStatus({

@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRecordStore } from '../lib/records.js'
@@ -49,9 +49,14 @@ test('add 后按分类分页读取，最新的在前', () => {
   assert.equal(third.items.length, 5)
   assert.equal(third.items[0].command, 'cmd-4')
 
-  // 非法 size 回落 20；越界页返回空数组而不是报错
+  // 非法 size 回落 20；页码收敛到最后一页，不回显怪值、不抛错
   assert.equal(store.list('command', 1, 7).size, 20)
-  assert.deepEqual(store.list('command', 99, 20).items, [])
+  const overflow = store.list('command', 99, 20)
+  assert.equal(overflow.page, 2)
+  assert.equal(overflow.items.length, 5)
+  const huge = store.list('command', 1e300, 20)
+  assert.equal(huge.page, 2)
+  assert.equal(huge.items.length, 5)
 
   assert.equal(store.list('tool').total, 1)
   assert.equal(store.list('skill').total, 0)
@@ -100,6 +105,30 @@ test('文件损坏时先备份再重建，不覆盖原始内容', () => {
   const backups = readdirSync(dir).filter((name) => name.startsWith('records.json.corrupt-'))
   assert.equal(backups.length, 1)
   assert.equal(store.list('command').total, 1)
+})
+
+test('合法 JSON 但形状不对（数组）也按损坏备份', () => {
+  const dir = tempDir()
+  writeFileSync(join(dir, 'records.json'), '[]', 'utf8')
+  const store = createRecordStore({ dir })
+  store.add('command', { tool: 'bash' })
+  store.flush()
+
+  const backups = readdirSync(dir).filter((name) => name.startsWith('records.json.corrupt-'))
+  assert.equal(backups.length, 1)
+  assert.equal(store.list('command').total, 1)
+})
+
+test('损坏标记后原文件被外部删除：后续记录仍能落盘', () => {
+  const dir = tempDir()
+  writeFileSync(join(dir, 'records.json'), '{ broken', 'utf8')
+  const store = createRecordStore({ dir })
+  unlinkSync(join(dir, 'records.json'))
+
+  store.add('command', { tool: 'bash' })
+  store.flush()
+  assert.equal(store.writeError(), undefined)
+  assert.equal(createRecordStore({ dir }).list('command').total, 1)
 })
 
 test('每类超过上限时丢弃最旧的', () => {
