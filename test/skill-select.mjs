@@ -1,10 +1,11 @@
 /**
- * 技能目录裁剪自测：不连网、不依赖宿主，用假 ctx + 假 client 验证
- * - 关闭 / 拒绝 / 无宿主目录 / 快照不完整 / 技能数不超限：原样返回
- * - 裁剪结果：换掉宿主那条目录消息，按相关性概率取前 N 个
- * - 概率阈值：没人过线就保持宿主目录，绝不产出空目录
- * - 失败降级：judge 不可用、judge 抛错、快照抛错都原样返回
- * - listSkills：给 skill_catalog 工具的全量清单
+ * 技能目录按需加载自测：不连网、不依赖宿主，用假 ctx + 假 client 验证
+ * - 关闭 / 拒绝 / 无宿主目录 / 快照不完整 / 失败：原样返回
+ * - 有技能就评估（不再以 skillLimit 为触发门槛）
+ * - skillLimit 只是最大保留数：过线超过上限时按概率取前 N，其余进按需池
+ * - 全低于阈值：输出空目录加兜底提示
+ * - 技能集合指纹不变：第二次不调模型，但仍重写目录
+ * - catalog：默认列按需池，scope='all' 列全部，无记录时回退全部
  *
  * 用法：node test/skill-select.mjs
  */
@@ -42,7 +43,7 @@ const hostCatalog = () => ({
   content: [
     {
       type: 'text',
-      text: '<system-reminder>\n<available_skills>\n- alpha: 审计代码\n- beta: 写周报\n- gamma: 边界扫描\n- delta: 画图\n- epsilon: 供应链检查\n</available_skills>\n</system-reminder>',
+      text: '<system-reminder>\n<available_skills>\n- alpha: 审计代码\n- beta: 写周报\n- gamma: 边界扫描\n</available_skills>\n</system-reminder>',
     },
   ],
   source: { kind: 'skill-catalog', form: 'catalog' },
@@ -81,7 +82,7 @@ function makeHarness({
   const snapshotCalls = []
   /** @type {any[]} */
   const judgeCalls = []
-  const agent = { session: { header: { cwd: headerCwd } } }
+  const agent = { id: 'agent-1', session: { header: { cwd: headerCwd } } }
   const workingDirectory =
     workingDirectoryCwd === undefined
       ? undefined
@@ -121,11 +122,14 @@ function makeHarness({
   return { selector, agent, snapshotCalls, judgeCalls }
 }
 
+const decision = makeDecision()
+
+// ── 触发条件与降级 ───────────────────────────────────────────────────
+
 await test('技能选择关闭时原样返回，且不取快照', async () => {
   const { selector, agent, snapshotCalls, judgeCalls } = makeHarness({
     settings: settingsWith({ skillsEnabled: false }),
   })
-  const decision = makeDecision()
   const result = await selector.onPreStep(decision, agent, undefined, undefined)
   assert.equal(result, decision)
   assert.equal(snapshotCalls.length, 0)
@@ -134,45 +138,60 @@ await test('技能选择关闭时原样返回，且不取快照', async () => {
 
 await test('decision 被拒绝时原样返回，不碰目录', async () => {
   const { selector, agent, snapshotCalls } = makeHarness()
-  const decision = makeDecision({ kind: 'reject' })
-  const result = await selector.onPreStep(decision, agent, undefined, undefined)
-  assert.equal(result, decision)
+  const rejected = makeDecision({ kind: 'reject' })
+  const result = await selector.onPreStep(rejected, agent, undefined, undefined)
+  assert.equal(result, rejected)
   assert.equal(snapshotCalls.length, 0)
 })
 
 await test('没有宿主技能目录消息时原样返回', async () => {
   const { selector, agent, snapshotCalls } = makeHarness()
-  const decision = makeDecision({
+  const bare = makeDecision({
     messages: [{ id: 'u1', role: 'user', content: [{ type: 'text', text: '你好' }], source: { kind: 'user' } }],
   })
-  const result = await selector.onPreStep(decision, agent, undefined, undefined)
-  assert.equal(result, decision)
+  const result = await selector.onPreStep(bare, agent, undefined, undefined)
+  assert.equal(result, bare)
   assert.equal(snapshotCalls.length, 0)
 })
 
 await test('快照不完整时原样返回，不去判定', async () => {
   const { selector, agent, snapshotCalls, judgeCalls } = makeHarness({
     complete: false,
-    skills: [skill('alpha', '审计代码'), skill('beta', '写周报'), skill('gamma', '边界扫描')],
+    skills: [skill('alpha', '审计代码'), skill('beta', '写周报')],
   })
-  const decision = makeDecision()
   const result = await selector.onPreStep(decision, agent, undefined, undefined)
   assert.equal(result, decision)
   assert.equal(snapshotCalls.length, 1)
   assert.equal(judgeCalls.length, 0)
 })
 
-await test('技能数没超过上限时原样返回，省一次判定', async () => {
-  const { selector, agent, judgeCalls } = makeHarness({
-    skills: [skill('alpha', '审计代码'), skill('beta', '写周报')],
-  })
-  const decision = makeDecision()
-  const result = await selector.onPreStep(decision, agent, undefined, undefined)
-  assert.equal(result, decision)
-  assert.equal(judgeCalls.length, 0)
+await test('失败降级：判定不可用、判定抛错、快照抛错都原样返回', async () => {
+  const skills = [skill('alpha', '审计代码'), skill('beta', '写周报'), skill('gamma', '边界扫描')]
+  const unavailableRun = makeHarness({ skills, unavailable: 'network' })
+  assert.equal(await unavailableRun.selector.onPreStep(decision, unavailableRun.agent, undefined, undefined), decision)
+
+  const throwingRun = makeHarness({ skills, judgeThrows: true })
+  assert.equal(await throwingRun.selector.onPreStep(decision, throwingRun.agent, undefined, undefined), decision)
+
+  const brokenSnapshot = makeHarness({ snapshotThrows: true })
+  assert.equal(await brokenSnapshot.selector.onPreStep(decision, brokenSnapshot.agent, undefined, undefined), decision)
 })
 
-await test('按概率裁剪：只留过线的前 N 个，其余消息与 decision 字段不动', async () => {
+// ── 评估与保留语义 ───────────────────────────────────────────────────
+
+await test('技能数小于上限也评估：全部过线就全保留', async () => {
+  const skills = [skill('alpha', '审计代码'), skill('beta', '写周报')]
+  const { selector, agent, judgeCalls } = makeHarness({ skills, answers: answersOf([0.9, 0.8]) })
+  const result = await selector.onPreStep(decision, agent, undefined, undefined)
+  assert.notEqual(result, decision)
+  assert.equal(judgeCalls.length, 1)
+  assert.deepEqual(
+    result.messages[1].source.entries.map((entry) => entry.name),
+    ['alpha', 'beta'],
+  )
+})
+
+await test('上限只是最大保留数：过线超过上限时按概率取前 N，其余进按需池', async () => {
   const skills = [
     skill('alpha', '审计代码'),
     skill('beta', '写周报'),
@@ -185,14 +204,11 @@ await test('按概率裁剪：只留过线的前 N 个，其余消息与 decisio
     workingDirectoryCwd: '/remote/work',
     answers: answersOf([0.9, 0.2, 0.8, 0.1, 0.95]),
   })
-  const decision = makeDecision()
   const result = await selector.onPreStep(decision, agent, undefined, undefined)
 
-  // decision 本身不被就地改写
+  // decision 本身不被就地改写；只换中间那条
   assert.notEqual(result, decision)
   assert.equal(decision.messages[1].source.kind, 'skill-catalog')
-
-  // 只换中间那条，其余消息原样引用
   assert.equal(result.messages.length, decision.messages.length)
   assert.equal(result.messages[0], decision.messages[0])
   assert.equal(result.messages[2], decision.messages[2])
@@ -200,8 +216,7 @@ await test('按概率裁剪：只留过线的前 N 个，其余消息与 decisio
   const replaced = result.messages[1]
   assert.equal(replaced.role, 'user')
   assert.equal(replaced.source.kind, 'decision-guard-skill-catalog')
-  assert.equal(replaced.source.form, 'catalog')
-  // 0.95 与 0.9 过线，按相关性从高到低取前 2
+  // 0.95 与 0.9 过线且不超过 2 个上限，按相关性从高到低
   assert.deepEqual(
     replaced.source.entries.map((entry) => entry.name),
     ['epsilon', 'alpha'],
@@ -213,73 +228,82 @@ await test('按概率裁剪：只留过线的前 N 个，其余消息与 decisio
   assert.match(text, /- epsilon: 供应链检查/)
   assert.match(text, /- alpha: 审计代码/)
   assert.doesNotMatch(text, /- beta: 写周报/)
-  assert.match(text, /这是部分目录，按名字调用 skill 工具仍可加载任意技能，调用 skill_catalog 可看全部/)
+  assert.doesNotMatch(text, /- gamma: 边界扫描/)
+  assert.match(text, /其余技能按需加载/)
   assert.match(text, /<\/system-reminder>$/)
 
   // cwd 优先取 workingDirectory.ensure 的结果，scope 是 agent
   const snapshotCall = snapshotCalls.find((call) => call.cwd !== undefined)
   assert.equal(snapshotCall.cwd, '/remote/work')
   assert.equal(snapshotCall.scope, agent)
-  assert.equal(snapshotCall.signal, undefined)
 
-  // 一道 noul 题对一个候选，题号 candidate-<序号>
-  assert.deepEqual(Object.keys(judgeCalls[0].questions), [
-    'candidate-0',
-    'candidate-1',
-    'candidate-2',
-    'candidate-3',
-    'candidate-4',
-  ])
+  // 一道 noul 题对一个候选
+  assert.deepEqual(Object.keys(judgeCalls[0].questions), ['candidate-0', 'candidate-1', 'candidate-2', 'candidate-3', 'candidate-4'])
   assert.equal(judgeCalls[0].questions['candidate-0'].type, 'noul')
   assert.equal(judgeCalls[0].state.skillCatalog.length, 5)
-  assert.equal(judgeCalls[0].state.skillCatalog[0].name, 'alpha')
   assert.equal(judgeCalls[0].state.task, '帮我审计这个仓库的安全性')
+
+  // 按需池只包含被裁掉的三个
+  const deferred = await selector.catalog(agent, 'deferred', undefined)
+  assert.deepEqual(
+    deferred.skills.map((entry) => entry.name).sort(),
+    ['beta', 'delta', 'gamma'],
+  )
+  assert.match(deferred.note, /按名字调用 skill 工具/)
 })
 
-await test('概率阈值：全部低于阈值时保持宿主目录，不产出空目录', async () => {
+await test('全低于阈值：输出空目录与兜底提示，而不是保留全量', async () => {
   const { selector, agent, judgeCalls } = makeHarness({
     skills: [skill('alpha', '审计代码'), skill('beta', '写周报'), skill('gamma', '边界扫描')],
     answers: answersOf([0.2, 0.3, 0.49]),
   })
-  const decision = makeDecision()
   const result = await selector.onPreStep(decision, agent, undefined, undefined)
-  assert.equal(result, decision)
+  assert.notEqual(result, decision)
   assert.equal(judgeCalls.length, 1)
+  assert.deepEqual(result.messages[1].source.entries, [])
+  const text = result.messages[1].content[0].text
+  assert.match(text, /本会话没有常驻技能摘要/)
+  assert.match(text, /skill_catalog/)
+  assert.doesNotMatch(text, /<available_skills>/)
 })
 
-await test('失败降级：判定不可用、判定抛错、快照抛错都原样返回', async () => {
+await test('技能集合指纹不变：第二次不调模型，但仍重写目录', async () => {
+  const skills = [skill('alpha', '审计代码'), skill('beta', '写周报')]
+  const { selector, agent, judgeCalls } = makeHarness({ skills, answers: answersOf([0.9, 0.1]) })
+  const first = await selector.onPreStep(decision, agent, undefined, undefined)
+  const second = await selector.onPreStep(decision, agent, undefined, undefined)
+  assert.equal(judgeCalls.length, 1)
+  assert.notEqual(first, second)
+  assert.deepEqual(
+    second.messages[1].source.entries.map((entry) => entry.name),
+    ['alpha'],
+  )
+})
+
+// ── 召回工具 ────────────────────────────────────────────────────────
+
+await test('catalog：默认只列按需池，all 列全部，无记录时回退全部', async () => {
   const skills = [skill('alpha', '审计代码'), skill('beta', '写周报'), skill('gamma', '边界扫描')]
-  const decision = makeDecision()
+  const { selector, agent } = makeHarness({ skills, answers: answersOf([0.9, 0.2, 0.2]) })
+  await selector.onPreStep(decision, agent, undefined, undefined)
 
-  const unavailableRun = makeHarness({ skills, unavailable: 'network' })
-  assert.equal(await unavailableRun.selector.onPreStep(decision, unavailableRun.agent, undefined, undefined), decision)
+  const deferred = await selector.catalog(agent, 'deferred', undefined)
+  assert.deepEqual(deferred.skills.map((entry) => entry.name).sort(), ['beta', 'gamma'])
 
-  const throwingRun = makeHarness({ skills, judgeThrows: true })
-  assert.equal(await throwingRun.selector.onPreStep(decision, throwingRun.agent, undefined, undefined), decision)
+  const all = await selector.catalog(agent, 'all', undefined)
+  assert.deepEqual(all.skills.map((entry) => entry.name), ['alpha', 'beta', 'gamma'])
+  assert.equal(all.note, '')
 
-  const brokenSnapshot = makeHarness({ snapshotThrows: true })
-  assert.equal(await brokenSnapshot.selector.onPreStep(decision, brokenSnapshot.agent, undefined, undefined), decision)
-})
+  // 没评估过的会话：回退列全部，并说明没有按需技能
+  const fresh = makeHarness({ skills })
+  const fallback = await fresh.selector.catalog(fresh.agent, 'deferred', undefined)
+  assert.deepEqual(fallback.skills.map((entry) => entry.name), ['alpha', 'beta', 'gamma'])
+  assert.match(fallback.note, /全部可加载技能/)
 
-await test('listSkills 返回全量清单，不按上限裁剪；cwd 回落到会话 header', async () => {
-  const skills = [
-    skill('alpha', '审计代码'),
-    skill('beta', '写周报'),
-    skill('gamma', '边界扫描'),
-    skill('delta', '画图'),
-    skill('epsilon', '供应链检查'),
-  ]
-  const { selector, agent, snapshotCalls } = makeHarness({
-    skills,
-    headerCwd: 'C:/session',
-    settings: settingsWith({ skillLimit: 2 }),
-  })
-  const listed = await selector.listSkills(agent, undefined)
-  assert.deepEqual(listed, skills.map(({ name, description }) => ({ name, description })))
-  assert.equal(snapshotCalls[0].cwd, 'C:/session')
-
-  const incomplete = makeHarness({ complete: false, skills })
-  assert.deepEqual(await incomplete.selector.listSkills(incomplete.agent, undefined), [])
+  const broken = makeHarness({ complete: false, skills })
+  const unavailable = await broken.selector.catalog(broken.agent, 'deferred', undefined)
+  assert.deepEqual(unavailable.skills, [])
+  assert.match(unavailable.note, /暂时不可用/)
 })
 
 console.log(`skill-select: ${passed} passed`)

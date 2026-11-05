@@ -113,11 +113,11 @@ window.__ModuleLoader__.load({
         selectRestoreConfirm: '把所有会话里隐藏的工具全部恢复？只撤销隐藏状态，不动上面的设置。',
         selectSkillsEnabled: '按任务挑选技能',
         selectSkillsEnabledHelp:
-          '默认关闭。开启后先把技能目录按当前任务排序，只保留最相关的几个，省下其余技能的说明文字。',
+          '默认关闭。开启后每个会话按当前任务判断哪些技能值得保留：过线的、且不超过上限的留在目录里，其余进按需池；技能集合变了才重新判定，避免目录每轮抖动。模型用 skill_catalog 查按需池，用 skill 按名加载。',
         selectSkillLimit: '最多保留技能数',
-        selectSkillLimitHelp: '1-20，默认 8。排在前面这么多名的技能保留，其余暂时隐藏。',
+        selectSkillLimitHelp: '1-20，默认 8。只是最大保留数：过线的技能按相关性降序取前 N，不凑数；超出的进按需池。',
         selectSkillMinProbability: '技能相关阈值',
-        selectSkillMinProbabilityHelp: '0-1 之间，默认 0.5。低于该概率的技能不入选。',
+        selectSkillMinProbabilityHelp: '0-1 之间，默认 0.5。低于该概率的技能不进目录，进按需池。全部低于阈值时目录为空，并提示用 skill_catalog 查看。',
         selectFilesEnabled: '文件结果排序',
         selectFilesEnabledHelp:
           '默认关闭。开启后 glob 返回的路径按与当前任务的相关性排序，相关的排前面。路径一条都不会丢。',
@@ -235,11 +235,11 @@ window.__ModuleLoader__.load({
           'Restore every tool hidden in any session? Only the hiding is undone; the settings above stay.',
         selectSkillsEnabled: 'Pick skills per task',
         selectSkillsEnabledHelp:
-          'Off by default. When on, the skill catalog is ranked against the task and only the most relevant few are kept, saving the other descriptions.',
+          'Off by default. Each session judges which skills are worth keeping: those above the threshold and within the limit stay in the catalog; the rest go to an on-demand pool. Re-judged only when the skill set changes, so the catalog stays stable across turns. The model can list the pool with skill_catalog and load any skill by name.',
         selectSkillLimit: 'Skills to keep',
-        selectSkillLimitHelp: '1-20, default 8. The top-ranked skills are kept and the rest are hidden for now.',
+        selectSkillLimitHelp: '1-20, default 8. A maximum only: qualifying skills are kept by relevance, never padded; the overflow goes to the on-demand pool.',
         selectSkillMinProbability: 'Skill relevance threshold',
-        selectSkillMinProbabilityHelp: 'Between 0 and 1, default 0.5. Skills below it are not selected.',
+        selectSkillMinProbabilityHelp: '0-1, default 0.5. Skills below this probability leave the catalog and join the on-demand pool. If none qualify, the catalog is empty and points to skill_catalog.',
         selectFilesEnabled: 'Rank file results',
         selectFilesEnabledHelp:
           'Off by default. When on, paths returned by glob are ranked by relevance to the task, relevant ones first. No path is ever dropped.',

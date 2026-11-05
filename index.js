@@ -377,8 +377,17 @@ export function apply(ctx) {
       ctx.tools.register({
         name: 'skill_catalog',
         description:
-          'List every skill available in this session with its summary. Load one with the skill tool using its exact name.',
-        parameters: { type: 'object', properties: {} },
+          'List skills. By default lists only the skills held back from this session catalog; pass scope:"all" to list every loadable skill. Load one with the skill tool using its exact name.',
+        parameters: {
+          type: 'object',
+          properties: {
+            scope: {
+              type: 'string',
+              enum: ['deferred', 'all'],
+              description: 'deferred (default) lists the on-demand pool; all lists every loadable skill.',
+            },
+          },
+        },
         output: {
           schema: {
             type: 'object',
@@ -391,6 +400,7 @@ export function apply(ctx) {
                   required: ['name', 'description'],
                 },
               },
+              note: { type: 'string' },
             },
             required: ['skills'],
           },
@@ -398,14 +408,15 @@ export function apply(ctx) {
             {
               type: 'text',
               text:
-                value.skills
-                  .map((skill) => `- ${skill.name}: ${skill.description}`)
-                  .join('\n') || '当前没有可加载的技能。',
+                [value.note, value.skills.map((skill) => `- ${skill.name}: ${skill.description}`).join('\n')]
+                  .filter((part) => part !== '')
+                  .join('\n\n') || '当前没有可加载的技能。',
             },
           ],
         },
-        async execute(_args, exec) {
-          return { skills: await skillSelector.listSkills(exec.agent, exec.signal) }
+        async execute(args, exec) {
+          const scope = args?.scope === 'all' ? 'all' : 'deferred'
+          return skillSelector.catalog(exec.agent, scope, exec.signal)
         },
       }),
     'dsh-decision-guard: skill_catalog',
