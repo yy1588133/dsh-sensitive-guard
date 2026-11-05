@@ -50,8 +50,10 @@ const USER_MESSAGE = [
  * @param {number[]} [options.probabilities] 按候选顺序给的相关概率
  * @param {(request: object) => Promise<object>} [options.judge] 自定义决策客户端
  * @param {(request: { deny: string[] }) => (() => void)} [options.restrict] 自定义 restrict
+ * @param {string[]} [options.scoped] 出现在 schemas 里、但 restrict 不认的作用域工具
  */
-function makeHarness({ settings = {}, probabilities = [0.9, 0.9, 0.9], judge, restrict } = {}) {
+function makeHarness({ settings = {}, probabilities = [0.9, 0.9, 0.9], judge, restrict, scoped = [] } = {}) {
+  const scopedNames = new Set(scoped)
   const tools = { list: DEFAULT_TOOLS.map((tool) => ({ ...tool })) }
   const judgeCalls = []
   const restrictCalls = []
@@ -73,6 +75,9 @@ function makeHarness({ settings = {}, probabilities = [0.9, 0.9, 0.9], judge, re
       const known = new Set(tools.list.map((tool) => tool.name))
       for (const name of deny) {
         if (!known.has(name)) throw new Error(`unknown tool: ${name}`)
+        // 作用域工具（agent.ctx.tools.register 注册，如 ops_bash）在 schemas 里，
+        // 但不在全局可限制名单里：整批调用会一起抛错，逼实现退回逐个。
+        if (scopedNames.has(name)) throw new Error(`unknown global tool: ${name}`)
       }
       const previous = active
       active = [...new Set([...active, ...deny])]
@@ -225,6 +230,23 @@ await test('失败一律不摘：不可用、抛错、答案非法、restrict �
   assert.deepEqual(broken.state(), [])
   assert.deepEqual(broken.selector.snapshot().hidden, [])
   assert.match(String(broken.records.at(-1)?.reason), /restrict/)
+})
+
+await test('作用域工具整次失败后退回逐个：能摘的照摘，不记失败', async () => {
+  // cron_create 模拟 ops_bash：出现在 schemas 里，但 restrict 不认它。
+  const h = makeHarness({
+    settings: { toolsEnabled: true },
+    probabilities: [0.9, 0.02, 0.02],
+    scoped: ['cron_create'],
+  })
+  await h.selector.onPreStep({ kind: 'continue' }, h.agent, USER_MESSAGE)
+
+  assert.deepEqual(h.state(), ['web_search'], '只摘能摘的，作用域工具跳过')
+  assert.deepEqual(h.selector.snapshot().hidden, ['web_search'])
+  assert.ok(!h.selector.snapshot().hidden.includes('cron_create'), '作用域工具不能被记成已隐藏')
+  assert.notEqual(h.records.at(-1)?.verdict, 'fail', '部分成功不是失败')
+  assert.ok(h.selector.snapshot().savedTokens > 0, 'savedTokens 只按真正隐藏的算')
+  assert.deepEqual(h.restrictCalls, [['web_search']], '整体失败后逐个重试，只有成功的入账')
 })
 
 // ── 召回 ────────────────────────────────────────────────────────────

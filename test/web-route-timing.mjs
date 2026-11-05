@@ -11,7 +11,13 @@
  */
 
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { apply } from '../index.js'
+
+// 插件构造记录存储会读 $DSH_HOME；测试指到临时目录，别碰真实配置。
+process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'dsh-decision-guard-test-'))
 
 /**
  * 最小 cordis 上下文：只实现插件用到的那几样。
@@ -109,7 +115,7 @@ function test(name, body) {
   }
 }
 
-const EXPECTED = ['/sensitive-guard/api/select', '/sensitive-guard/api/config', '/sensitive-guard/api/rules', '/sensitive-guard/api/test', '/sensitive-guard/api/log'].sort()
+const EXPECTED = ['/sensitive-guard/api/select', '/sensitive-guard/api/config', '/sensitive-guard/api/rules', '/sensitive-guard/api/test', '/sensitive-guard/api/records'].sort()
 
 test('服务未就绪时不注册路由、也不影响守卫钩子', () => {
   const h = makeHarness()

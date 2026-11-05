@@ -80,8 +80,24 @@ window.__ModuleLoader__.load({
         confirm: '确定',
         recent: '最近判定',
         recentEmpty: '还没有判定记录。',
-        recentClear: '清空',
-        recentClearConfirm: '清空最近判定记录？（只清面板上的观测记录，不影响规则和设置）',
+        recordsCategoryCommand: '敏感命令',
+        recordsCategoryTool: '工具选择',
+        recordsCategorySkill: '技能选择',
+        recordsCount: '共 {total} 条 · 第 {page}/{pages} 页',
+        recordsPageSize: '每页 {n}',
+        recordsPrev: '上一页',
+        recordsNext: '下一页',
+        recordsClear: '清空当前分类',
+        recordsClearConfirm: '只清空当前分类「{category}」的记录？其他分类和设置不受影响。',
+        recordsCleared: '已清空当前分类',
+        recordsCopy: '复制',
+        recordsCopied: '已复制这条记录',
+        recordsCopyFailed: '复制失败：浏览器没给剪贴板权限',
+        recordsHidden: '隐藏',
+        recordsKept: '保留',
+        recordsSavedTokens: '省下',
+        recordsWriteError: '记录写入磁盘失败：{msg}',
+        recordsLoadFailed: '读取记录失败：{msg}',
         loading: '加载中…',
         loadFailed: '读取配置失败：{msg}',
         fromEnv: '环境变量',
@@ -200,8 +216,24 @@ window.__ModuleLoader__.load({
         confirm: 'Confirm',
         recent: 'Recent decisions',
         recentEmpty: 'No decisions recorded yet.',
-        recentClear: 'Clear',
-        recentClearConfirm: 'Clear the recent decision log? (Panel observations only; rules and settings stay.)',
+        recordsCategoryCommand: 'Sensitive commands',
+        recordsCategoryTool: 'Tool selection',
+        recordsCategorySkill: 'Skill selection',
+        recordsCount: '{total} records · page {page}/{pages}',
+        recordsPageSize: '{n} per page',
+        recordsPrev: 'Previous',
+        recordsNext: 'Next',
+        recordsClear: 'Clear this category',
+        recordsClearConfirm: 'Clear only the records of this category ("{category}")? Other categories and settings are untouched.',
+        recordsCleared: 'Category cleared',
+        recordsCopy: 'Copy',
+        recordsCopied: 'Record copied',
+        recordsCopyFailed: 'Copy failed: the browser blocked clipboard access',
+        recordsHidden: 'hidden',
+        recordsKept: 'kept',
+        recordsSavedTokens: 'saved',
+        recordsWriteError: 'Recording to disk failed: {msg}',
+        recordsLoadFailed: 'Could not load records: {msg}',
         loading: 'Loading…',
         loadFailed: 'Could not load the configuration: {msg}',
         fromEnv: 'environment',
@@ -310,6 +342,36 @@ window.__ModuleLoader__.load({
       }
     }
     /* select-panel-helpers:end */
+
+    /* records-panel-helpers:start */
+    /** 总页数：至少一页，避免出现「第 1/0 页」。 */
+    function recordsPages(total, size) {
+      const per = Number.isSafeInteger(size) && size > 0 ? size : 20
+      const count = Number(total)
+      if (!Number.isFinite(count) || count <= 0) return 1
+      return Math.max(1, Math.ceil(count / per))
+    }
+
+    /**
+     * 记录摘要：命令判定、工具选择、技能选择三类记录字段不同，能显示的都拼上。
+     *
+     * 文案用 labels 传进来而不是写死，中英文才都能用。
+     */
+    function entrySummary(entry, labels) {
+      const parts = []
+      if (typeof entry.tool === 'string' && entry.tool !== '') parts.push(entry.tool)
+      if (typeof entry.rules === 'string' && entry.rules !== '') parts.push(entry.rules)
+      if (typeof entry.reason === 'string' && entry.reason !== '') parts.push(entry.reason)
+      if (typeof entry.detail === 'string' && entry.detail !== '') parts.push(entry.detail)
+      // 工具选择记 hidden / kept，技能选择记 deferred / retained，同一件事两种字段名。
+      const hiddenNames = Array.isArray(entry.hidden) ? entry.hidden : entry.deferred
+      const keptNames = Array.isArray(entry.kept) ? entry.kept : entry.retained
+      if (Array.isArray(hiddenNames) && hiddenNames.length > 0) parts.push(`${labels.hidden} ${hiddenNames.length}`)
+      if (Array.isArray(keptNames) && keptNames.length > 0) parts.push(`${labels.kept} ${keptNames.length}`)
+      if (Number.isFinite(entry.savedTokens) && entry.savedTokens > 0) parts.push(`${labels.saved} ${entry.savedTokens}`)
+      return parts.join(' · ')
+    }
+    /* records-panel-helpers:end */
 
     /** 统一的小请求封装：返回 JSON，非 2xx 抛错。 */
     async function api(path, init) {
@@ -590,32 +652,47 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** 「最近判定」一行。 */
-    function DecisionRow({ entry, t }) {
-      const label =
-        entry.verdict === 'allow'
-          ? t('verdictAllow')
-          : entry.verdict === 'deny'
-            ? t('verdictDeny')
-            : entry.verdict === 'check-failed'
-              ? t('verdictCheckFailed')
-              : entry.verdict === 'delegate-sandbox'
-                ? t('verdictSandbox')
-                : t('verdictUnavailable')
+    /** 记录分类：id 与文案键，分类按钮和未知 verdict 的标签都从这里取。 */
+    const RECORD_CATEGORIES = [
+      { id: 'command', labelKey: 'recordsCategoryCommand' },
+      { id: 'tool', labelKey: 'recordsCategoryTool' },
+      { id: 'skill', labelKey: 'recordsCategorySkill' },
+    ]
+
+    /** 已知 verdict → 文案键；工具选择、技能选择记录的 verdict 不在这里，回落到分类名。 */
+    const VERDICT_KEYS = {
+      allow: 'verdictAllow',
+      deny: 'verdictDeny',
+      'check-failed': 'verdictCheckFailed',
+      'delegate-sandbox': 'verdictSandbox',
+      unavailable: 'verdictUnavailable',
+    }
+
+    /** 「最近判定」一行：标签 + 摘要 + 时间 + 复制。 */
+    function DecisionRow({ entry, t, category, onCopy }) {
+      const categoryLabelKey = RECORD_CATEGORIES.find((item) => item.id === category)?.labelKey ?? 'recent'
+      const label = t(VERDICT_KEYS[entry.verdict] ?? categoryLabelKey)
       const color =
         entry.verdict === 'allow' || entry.verdict === 'delegate-sandbox'
           ? 'var(--dsw-alias-state-success-primary)'
           : entry.verdict === 'deny' || entry.verdict === 'check-failed'
             ? 'var(--dsw-alias-state-error-primary)'
-            : 'var(--dsw-alias-state-warn-primary)'
+            : entry.verdict === 'unavailable'
+              ? 'var(--dsw-alias-state-warn-primary)'
+              : 'var(--dsw-alias-label-secondary)'
+      const summary = entrySummary(entry, {
+        hidden: t('recordsHidden'),
+        kept: t('recordsKept'),
+        saved: t('recordsSavedTokens'),
+      })
       return h(
         'div',
         {
           style: {
             display: 'grid',
-            gridTemplateColumns: '72px minmax(0, 1fr) auto',
+            gridTemplateColumns: '72px minmax(0, 1fr) auto auto',
             gap: 10,
-            alignItems: 'baseline',
+            alignItems: 'center',
             padding: '5px 0',
             borderTop: '1px solid var(--dsw-alias-border-l1)',
             fontSize: 12,
@@ -633,17 +710,16 @@ window.__ModuleLoader__.load({
               whiteSpace: 'nowrap',
               minWidth: 0,
             },
-            title: entry.command ?? '',
+            title: entry.command ?? summary,
           },
-          `${entry.tool}${entry.rules === undefined ? '' : ` · ${entry.rules}`}${
-            entry.reason === undefined ? '' : ` · ${entry.reason}`
-          }${entry.detail === undefined ? '' : ` · ${entry.detail}`}`,
+          summary,
         ),
         h(
           'span',
           { style: { color: 'var(--dsw-alias-label-secondary)', opacity: 0.7, whiteSpace: 'nowrap' } },
-          entry.at.slice(11, 19),
+          typeof entry.at === 'string' ? entry.at.slice(11, 19) : '',
         ),
+        h(Button, { onClick: () => onCopy(entry) }, t('recordsCopy')),
       )
     }
 
@@ -654,7 +730,12 @@ window.__ModuleLoader__.load({
       const [config, setConfig] = React.useState(undefined)
       const [error, setError] = React.useState('')
       const [rules, setRules] = React.useState([])
-      const [logEntries, setLogEntries] = React.useState([])
+      const [recordCategory, setRecordCategory] = React.useState('command')
+      const [recordPage, setRecordPage] = React.useState(1)
+      const [recordSize, setRecordSize] = React.useState(20)
+      const [records, setRecords] = React.useState({ items: [], total: 0, page: 1, size: 20 })
+      const [recordStatus, setRecordStatus] = React.useState(null)
+      const [recordEpoch, setRecordEpoch] = React.useState(0)
       const [draft, setDraft] = React.useState(null)
       const [status, setStatus] = React.useState('')
       const [busy, setBusy] = React.useState(false)
@@ -665,17 +746,12 @@ window.__ModuleLoader__.load({
       const [selectBusy, setSelectBusy] = React.useState(false)
       const [selectStatus, setSelectStatus] = React.useState('')
 
-      /** 首次加载：配置、规则、判定记录。 */
+      /** 首次加载：配置与规则。 */
       const load = React.useCallback(async () => {
         try {
-          const [configResult, rulesResult, logResult] = await Promise.all([
-            api('config'),
-            api('rules'),
-            api('log'),
-          ])
+          const [configResult, rulesResult] = await Promise.all([api('config'), api('rules')])
           setConfig(configResult.config)
           setRules(rulesResult.rules)
-          setLogEntries(logResult.entries)
           setError('')
         } catch (loadError) {
           setError(loadError instanceof Error ? loadError.message : String(loadError))
@@ -685,6 +761,43 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         void load()
       }, [load])
+
+      /**
+       * 判定记录：分类、页码或每页条数一变就重读，清空后靠 recordEpoch 再拉一次。
+       *
+       * 状态只存文案键不存译好的句子，语言切换和重复渲染都不会留下旧句子。
+       */
+      React.useEffect(() => {
+        let cancelled = false
+        api(`records?category=${recordCategory}&page=${recordPage}&size=${recordSize}`)
+          .then((result) => {
+            if (cancelled) return
+            setRecords({
+              items: result.items ?? [],
+              total: result.total ?? 0,
+              page: result.page ?? recordPage,
+              size: result.size ?? recordSize,
+            })
+            // 复制 / 清空的提示是瞬时的，不因为重拉列表就消失；读取类错误则跟着新结果走。
+            setRecordStatus((current) => {
+              if (current?.transient === true) return current
+              return result.writeError === undefined
+                ? null
+                : { key: 'recordsWriteError', values: { msg: result.writeError } }
+            })
+          })
+          .catch((recordError) => {
+            if (cancelled) return
+            setRecords({ items: [], total: 0, page: 1, size: 20 })
+            setRecordStatus({
+              key: 'recordsLoadFailed',
+              values: { msg: recordError instanceof Error ? recordError.message : String(recordError) },
+            })
+          })
+        return () => {
+          cancelled = true
+        }
+      }, [recordCategory, recordPage, recordSize, recordEpoch])
 
       /**
        * 读取按需加载设置。
@@ -782,14 +895,29 @@ window.__ModuleLoader__.load({
         }
       }
 
-      /** 清空最近判定。 */
-      const clearLog = async () => {
-        if (!window.confirm(t('recentClearConfirm'))) return
+      /** 清空当前分类的记录；别的分类与设置都不动。 */
+      const clearRecords = async () => {
+        const categoryLabel = t(RECORD_CATEGORIES.find((item) => item.id === recordCategory)?.labelKey ?? 'recent')
+        if (!window.confirm(t('recordsClearConfirm', { category: categoryLabel }))) return
         try {
-          const result = await api('log', { method: 'DELETE' })
-          setLogEntries(result.entries)
+          await api(`records?category=${recordCategory}`, { method: 'DELETE' })
+          setRecordStatus({ key: 'recordsCleared', transient: true })
+          setRecordEpoch((value) => value + 1)
         } catch (clearError) {
-          setStatus(`${t('saveFailed')}: ${clearError instanceof Error ? clearError.message : String(clearError)}`)
+          setRecordStatus({
+            key: 'recordsLoadFailed',
+            values: { msg: clearError instanceof Error ? clearError.message : String(clearError) },
+          })
+        }
+      }
+
+      /** 复制一条记录的完整 JSON。没有剪贴板权限时只提示，不抛错。 */
+      const copyRecord = async (entry) => {
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(entry, null, 2))
+          setRecordStatus({ key: 'recordsCopied', transient: true })
+        } catch {
+          setRecordStatus({ key: 'recordsCopyFailed', transient: true })
         }
       }
 
@@ -881,6 +1009,34 @@ window.__ModuleLoader__.load({
               border: 'none',
               borderBottom: `2px solid ${tab === key ? 'var(--dsw-alias-brand-primary)' : 'transparent'}`,
               cursor: 'pointer',
+            },
+          },
+          label,
+        )
+
+      /** 记录分类切换：小胶囊按钮，选中用品牌色填充，与主按钮同一套色。 */
+      const categoryButton = (id, label) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            key: id,
+            onClick: () => {
+              setRecordCategory(id)
+              setRecordPage(1)
+            },
+            style: {
+              padding: '3px 10px',
+              fontSize: 12,
+              fontWeight: recordCategory === id ? 600 : 400,
+              color: recordCategory === id ? 'var(--dsw-alias-bg-base)' : 'var(--dsw-alias-label-secondary)',
+              background: recordCategory === id ? 'var(--dsw-alias-brand-primary)' : 'transparent',
+              border: `1px solid ${
+                recordCategory === id ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l1)'
+              }`,
+              borderRadius: 999,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
             },
           },
           label,
@@ -1249,6 +1405,7 @@ window.__ModuleLoader__.load({
 
       const hidden = selectState?.stats?.hidden ?? []
       const savedTokens = selectState?.stats?.savedTokens ?? 0
+      const totalPages = recordsPages(records.total, records.size)
 
       /** select 接口没就绪时的提示盒：说明原因，给一个重读按钮。 */
       const selectUnavailablePanel = h(
@@ -1492,18 +1649,79 @@ window.__ModuleLoader__.load({
               : assistPanel,
         h(
           'div',
-          { style: { display: 'grid', gap: 4, marginTop: 8, minWidth: 0 } },
+          { style: { display: 'grid', gap: 8, marginTop: 8, minWidth: 0 } },
           h(
             'div',
-            { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+            { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
             h(
               'h3',
               { style: { margin: 0, fontSize: 13, color: 'var(--dsw-alias-label-primary)', flex: '1 1 auto' } },
               t('recent'),
             ),
-            logEntries.length === 0 ? null : h(Button, { tone: 'danger', onClick: () => void clearLog() }, t('recentClear')),
+            h(
+              'div',
+              { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+              RECORD_CATEGORIES.map((item) => categoryButton(item.id, t(item.labelKey))),
+            ),
+            records.total === 0
+              ? null
+              : h(Button, { tone: 'danger', onClick: () => void clearRecords() }, t('recordsClear')),
           ),
-          logEntries.length === 0
+          h(
+            'div',
+            {
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                fontSize: 12,
+                color: 'var(--dsw-alias-label-secondary)',
+              },
+            },
+            h(
+              'span',
+              { style: { flex: '1 1 auto', minWidth: 0 } },
+              t('recordsCount', {
+                total: records.total,
+                page: Math.min(records.page, totalPages),
+                pages: totalPages,
+              }),
+            ),
+            h(Select, {
+              value: String(recordSize),
+              width: 96,
+              options: [10, 20, 50, 100].map((size) => ({
+                value: String(size),
+                label: t('recordsPageSize', { n: size }),
+              })),
+              onChange: (value) => {
+                setRecordSize(Number(value))
+                setRecordPage(1)
+              },
+            }),
+            h(
+              Button,
+              { disabled: records.page <= 1, onClick: () => setRecordPage((page) => Math.max(1, page - 1)) },
+              t('recordsPrev'),
+            ),
+            h(Button, { disabled: records.page >= totalPages, onClick: () => setRecordPage((page) => page + 1) }, t('recordsNext')),
+          ),
+          recordStatus === null
+            ? null
+            : h(
+                'div',
+                {
+                  style: {
+                    fontSize: 12,
+                    color: 'var(--dsw-alias-label-secondary)',
+                    minWidth: 0,
+                    overflowWrap: 'anywhere',
+                  },
+                },
+                t(recordStatus.key, recordStatus.values),
+              ),
+          records.items.length === 0
             ? h(
                 'div',
                 { style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary)' } },
@@ -1512,8 +1730,14 @@ window.__ModuleLoader__.load({
             : h(
                 'div',
                 { style: { minWidth: 0 } },
-                logEntries.slice(0, 20).map((entry, index) =>
-                  h(DecisionRow, { key: `${entry.at}-${index}`, entry, t }),
+                records.items.map((entry, index) =>
+                  h(DecisionRow, {
+                    key: `${recordCategory}-${records.page}-${index}`,
+                    entry,
+                    t,
+                    category: recordCategory,
+                    onCopy: copyRecord,
+                  }),
                 ),
               ),
         ),

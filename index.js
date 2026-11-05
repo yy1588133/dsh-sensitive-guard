@@ -26,7 +26,8 @@ import { DecisionClient } from './lib/jev.js'
 import { createSkillSelector } from './lib/skill-select.js'
 import { createFileRanker } from './lib/file-rank.js'
 import { createToolSelector } from './lib/tool-select.js'
-import { COMMAND_FIELD_NAMES, RulesStore, SettingsStore, dshHome } from './lib/store.js'
+import { COMMAND_FIELD_NAMES, RulesStore, SettingsStore, dataDir, dshHome } from './lib/store.js'
+import { CATEGORIES, createRecordStore } from './lib/records.js'
 
 export const name = 'dsh-decision-guard'
 
@@ -35,9 +36,6 @@ export const inject = ['tools']
 
 /** 面板 HTTP 前缀。 */
 const API_BASE = '/sensitive-guard/api'
-
-/** 内存里保留的最近判定条数。 */
-const LOG_CAPACITY = 50
 
 /**
  * 这次调用是不是「能把一段文本交给 shell 执行」的工具。
@@ -249,6 +247,8 @@ export function apply(ctx) {
     },
   }
   const client = new DecisionClient({ getSettings: () => settingsStore.get(), logger })
+  // 判定记录按分类落盘；写失败只记日志，不影响判定。
+  const records = createRecordStore({ dir: dataDir(), logger })
 
   /**
    * 三个新功能共用同一个连接与冷却：判断失败只影响那一次功能，不影响命令守门。
@@ -259,23 +259,19 @@ export function apply(ctx) {
     client,
     getSettings: () => settingsStore.get(),
     logger,
+    record: (entry) => records.add('skill', entry),
   })
   // 排序模块自己在 tools/execute 与 tools/post-execute 上挂链，这里只创建一次。
   createFileRanker({ ctx, client, getSettings: () => settingsStore.get(), logger })
 
-  /** @type {Array<object>} */
-  const log = []
-  /** @param {object} entry 一条判定记录 */
-  const record = (entry) => {
-    log.unshift({ at: new Date().toISOString(), ...entry })
-    if (log.length > LOG_CAPACITY) log.length = LOG_CAPACITY
-  }
+  /** @param {object} entry 一条敏感命令判定记录 */
+  const record = (entry) => records.add('command', entry)
   const toolSelector = createToolSelector({
     ctx,
     client,
     getSettings: () => settingsStore.get(),
     logger,
-    record,
+    record: (entry) => records.add('tool', entry),
   })
 
   /**
@@ -423,6 +419,7 @@ export function apply(ctx) {
   )
 
   ctx.effect(() => () => toolSelector.dispose(), 'dsh-decision-guard: dispose selectors')
+  ctx.effect(() => () => records.flush(), 'dsh-decision-guard: flush records')
 
   ctx.effect(() => {
     const off = ctx.on('tools/pre-execute', async (exec, next) => {
@@ -792,15 +789,23 @@ export function apply(ctx) {
         },
       ],
       [
-        route('log'),
+        route('records'),
         async (req, res) => {
           if (!allowed(req)) return sendJson(res, 403, { status: 'forbidden' })
+          const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+          const rawCategory = url.searchParams.get('category')
+          const category = CATEGORIES.includes(rawCategory) ? rawCategory : undefined
           const method = String(req.method ?? 'GET').toUpperCase()
-          if (method === 'GET' || method === 'HEAD') return sendJson(res, 200, { status: 'ok', entries: log })
+          if (method === 'GET' || method === 'HEAD') {
+            const page = Number(url.searchParams.get('page') ?? '1')
+            const size = Number(url.searchParams.get('size') ?? '20')
+            const result = records.list(category ?? 'command', page, size)
+            return sendJson(res, 200, { status: 'ok', ...result, writeError: records.writeError() })
+          }
           if (method !== 'DELETE' && method !== 'POST') return sendJson(res, 405, { status: 'method' })
-          // 清空只影响内存里的观测记录，不动规则、设置和会话日志。
-          log.length = 0
-          return sendJson(res, 200, { status: 'ok', entries: log })
+          // 清空只影响观测记录，不动规则、设置和会话日志。
+          records.clear(category)
+          return sendJson(res, 200, { status: 'ok' })
         },
       ],
     ]

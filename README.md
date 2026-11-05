@@ -95,6 +95,29 @@ curl -s -X POST http://127.0.0.1:55422/sensitive-guard/api/select -H 'content-ty
 
 配置放在 `$DSH_HOME/plugins/dsh-decision-guard/`（`config.json` + `rules.json`），不在包目录里，升级重装都不会蒸发。首次启动会从 `dsh-sensitive-guard/` 复制一次，旧目录保留。
 
+## 判定记录
+
+面板底部「最近判定」按功能分成三类，各存各的：
+
+| 分类 | 记录内容 |
+|---|---|
+| 敏感命令 | 命中规则、判定结果、模型理由、置信度 |
+| 工具选择 | 隐藏/保留的工具、估算省下的 token |
+| 技能选择 | 保留与按需池的技能名、总数 |
+
+- **落盘**：`$DSH_HOME/plugins/dsh-decision-guard/records.json`，每类最多 500 条，重启不丢。
+- **分页**：默认每页 20 条，可切 10/20/50/100；页码越界返回空页。
+- **复制**：每条右侧「复制」按钮，复制完整 JSON，方便贴出来排查。
+- **清空**：只清当前分类，其他分类与设置不动。
+- 文件损坏时先备份成 `records.json.corrupt-<时间戳>` 再重建，不会悄悄覆盖。
+
+命令行：
+
+```bash
+curl -s "http://127.0.0.1:55422/sensitive-guard/api/records?category=tool&page=1&size=20"
+curl -s -X DELETE "http://127.0.0.1:55422/sensitive-guard/api/records?category=tool"
+```
+
 ## 关于国内网络
 
 从中国大陆直连 `api.typesafe.ai` 会被 Cloudflare 按地域返回 **HTTP 451**。插件自带零依赖的 CONNECT 隧道，解析顺序是：**面板配置 → 环境变量 → Windows 系统代理 → 直连**。回环地址、`no_proxy` 命中项和非 https 目标走全局 `fetch`，留给宿主接管。
@@ -108,11 +131,13 @@ node test/selftest.mjs        # 规则匹配、设置规整（38 例）
 node test/tool-scope.mjs      # 工具范围判定（14 例）
 node test/jev-protocol.mjs    # 请求体、答案解析、失败降级、缓存冷却（22 例）
 node test/decision-judge.mjs  # 通用 judge 的降级路径（4 例）
-node test/tool-select.mjs     # 工具隐藏/召回/白名单/失败不摘（6 例）
-node test/skill-select.mjs    # 技能裁剪/阈值/失败降级（9 例）
+node test/tool-select.mjs     # 工具隐藏/召回/白名单/作用域工具跳过（7 例）
+node test/skill-select.mjs    # 技能裁剪/上限/按需池/缓存复用（10 例）
 node test/file-rank.mjs       # glob 排序/超候选/路径不丢（9 例）
+node test/records.mjs         # 记录分页/持久化/损坏备份（5 例）
 node test/rules-parity.mjs    # 与 snow-app 的 43 条规则逐条比对
 node test/web-route-timing.mjs# 面板路由挂载时机（4 例）
+node test/panel-shape.mjs     # 面板结构/分类/分页/复制契约（29 例）
 ```
 
 ## 已知限制

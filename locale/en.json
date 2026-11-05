@@ -33,5 +33,25 @@
     "selectUnavailableHelp": "This tab needs the backend /sensitive-guard/api/select endpoint. While it is missing you keep seeing this note; restart DSH after updating the plugin.",
     "selectReload": "Reload"
   },
-  "title": "Decision Guard"
+  "title": "Decision Guard",
+  "records": {
+    "recordsCategoryCommand": "Sensitive commands",
+    "recordsCategoryTool": "Tool selection",
+    "recordsCategorySkill": "Skill selection",
+    "recordsCount": "{total} records · page {page}/{pages}",
+    "recordsPageSize": "{n} per page",
+    "recordsPrev": "Previous",
+    "recordsNext": "Next",
+    "recordsClear": "Clear this category",
+    "recordsClearConfirm": "Clear only the records of this category (\"{category}\")? Other categories and settings are untouched.",
+    "recordsCleared": "Category cleared",
+    "recordsCopy": "Copy",
+    "recordsCopied": "Record copied",
+    "recordsCopyFailed": "Copy failed: the browser blocked clipboard access",
+    "recordsHidden": "hidden",
+    "recordsKept": "kept",
+    "recordsSavedTokens": "saved",
+    "recordsWriteError": "Recording to disk failed: {msg}",
+    "recordsLoadFailed": "Could not load records: {msg}"
+  }
 }
