@@ -30,7 +30,7 @@ const DEFAULT_TOOLS = [
   { name: 'read', description: '读取文件内容' },
   { name: 'write', description: '写入文件内容' },
   { name: 'bash', description: '执行 shell 命令' },
-  { name: 'ops_glob', description: '按模式列出文件路径，返回匹配的文件。' },
+  { name: 'terminal_send', description: '向终端会话发送输入。' },
   { name: 'web_search', description: '联网搜索当前信息，返回摘要与来源链接。' },
   { name: 'cron_create', description: `操作定时任务：${'x'.repeat(400)}` },
 ]
@@ -156,7 +156,7 @@ await test('每会话只评估一次：题按候选序号编号，超长描述�
   const request = h.judgeCalls[0]
   assert.deepEqual(Object.keys(request.questions).sort(), ['0', '1', '2'])
   assert.equal(request.questions['0'].type, 'noul')
-  assert.match(request.questions['0'].instructions, /ops_glob/)
+  assert.match(request.questions['0'].instructions, /terminal_send/)
   assert.match(request.questions['2'].instructions, /cron_create/)
   assert.match(request.questions['2'].instructions, /操作定时任务/)
   assert.ok(!request.questions['2'].instructions.includes('x'.repeat(301)), '描述应截断到 300 字符')
@@ -247,6 +247,17 @@ await test('作用域工具整次失败后退回逐个：能摘的照摘，不�
   assert.notEqual(h.records.at(-1)?.verdict, 'fail', '部分成功不是失败')
   assert.ok(h.selector.snapshot().savedTokens > 0, 'savedTokens 只按真正隐藏的算')
   assert.deepEqual(h.restrictCalls, [['web_search']], '整体失败后逐个重试，只有成功的入账')
+})
+
+await test('ops_* 核心工具默认不进候选，模型摘不到', async () => {
+  const h = makeHarness({ settings: { toolsEnabled: true } })
+  h.setTools([...DEFAULT_TOOLS, { name: 'ops_bash', description: '执行命令' }, { name: 'ops_read_files', description: '读文件' }])
+  await h.selector.onPreStep({ kind: 'continue' }, h.agent, USER_MESSAGE)
+  const prompts = Object.values(h.judgeCalls[0].questions)
+    .map((question) => String(question.instructions))
+    .join('\n')
+  assert.doesNotMatch(prompts, /ops_bash/)
+  assert.doesNotMatch(prompts, /ops_read_files/)
 })
 
 // ── 召回 ────────────────────────────────────────────────────────────

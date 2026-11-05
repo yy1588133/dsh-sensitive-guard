@@ -325,4 +325,26 @@ await test('技能设置变了：同一技能集合也要重新判定', async ()
   assert.deepEqual(second.messages[1].source.entries.map((entry) => entry.name), ['alpha'])
 })
 
+await test('同一 turn 内不重复读快照，新用户消息才重新检查', async () => {
+  const skills = [skill('alpha', '审计代码'), skill('beta', '写周报')]
+  const { selector, agent, snapshotCalls, judgeCalls } = makeHarness({ skills, answers: answersOf([0.9, 0.1]) })
+
+  await selector.onPreStep(decision, agent, undefined, undefined)
+  assert.equal(snapshotCalls.length, 1)
+
+  await selector.onPreStep(decision, agent, undefined, undefined)
+  assert.equal(snapshotCalls.length, 1, '同一 turn 不应再读快照')
+  assert.equal(judgeCalls.length, 1)
+
+  const next = makeDecision({
+    messages: [
+      { id: 'u2', role: 'user', content: [{ type: 'text', text: '换个任务：写周报' }], source: { kind: 'user' } },
+      hostCatalog(),
+    ],
+  })
+  await selector.onPreStep(next, agent, undefined, undefined)
+  assert.equal(snapshotCalls.length, 2, '新用户消息应重新检查快照')
+  assert.equal(judgeCalls.length, 1, '技能集合没变，不重判')
+})
+
 console.log(`skill-select: ${passed} passed`)

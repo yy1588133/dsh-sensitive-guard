@@ -40,7 +40,7 @@ dsh plugin --profile <你的 profile> add yy1588133/dsh-sensitive-guard
 
 **每会话只评估一次。** 工具表一变，prompt 前缀就作废，KV 缓存跟着重算；为了省 token 反而每轮重算一次，不划算。换任务了想让模型重新判断，新开一个会话即可。
 
-**白名单永远不会被摘。** 默认包含 `read`、`write`、`edit`、`bash`、`glob`、`grep`、`todo`、`skill`、`tool_search`、`skill_catalog`，你可以在面板里追加。少了这些，模型连「把工具找回来」这一步都做不了。
+**白名单永远不会被摘。** 默认分两组：通用名（`read`、`write`、`edit`、`bash`、`glob`、`grep`、`todo`）和本环境实际工具名（`ops_read_files`、`ops_bash`、`ops_glob`、`ops_grep`、`ops_inspect_local_file`、`ops_result`、`ops_discover_tools`、`todo_write`），再加 `skill`、`tool_search`、`skill_catalog`。你可以在面板里追加。少了这些，模型连「把工具找回来」这一步都做不了。
 
 **判不清就不摘。** 没 key、超时、冷却中、答案缺项、`restrict` 抛错——任何一步失败都保持完整工具表。宁可多花 token，不能把工具变没。
 
@@ -59,7 +59,7 @@ dsh plugin --profile <你的 profile> add yy1588133/dsh-sensitive-guard
 - **其余的进按需池**：超上限的和没过线的一样，从目录里去掉，但不删除、不禁用。
 - **全都没过线时目录为空**，并留一句提示告诉模型去 `skill_catalog` 找。
 
-**评估频率**：每个会话一次。技能集合（名字 + 描述）的指纹变了才重新问模型，否则复用上次结果、只重写目录消息——目录内容稳定，prompt 前缀不会每轮抖动，也省掉每轮的模型调用。
+**评估频率**：每个会话一次。只有出现新的用户消息时才读技能快照、比对指纹；同一 turn 内的后续 step 直接用上次结果重写目录，不联网、不读快照。技能集合（名字 + 描述）或技能设置变了才重新问模型——目录内容稳定，prompt 前缀不会每轮抖动。
 
 **技能没有被禁用。** 目录只是摘要清单，`skill` 工具仍能按名字加载任意技能。模型需要找被裁掉的技能时调用 `skill_catalog`：默认只列按需池（结果短），传 `scope: "all"` 才列全部。所以裁错了最多是「模型一时没看到」，不会「这个技能用不了」。
 
